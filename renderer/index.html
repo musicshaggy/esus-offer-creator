@@ -718,8 +718,37 @@
 	  }
 	}
 
+	/* Tooltip z ceną po rabacie */
+	.esus-tip {
+	  position: fixed;           /* portal do okna, nie zależy od tabeli */
+	  z-index: 25000;
+	  display: none;
 
-	
+	  max-width: 260px;
+	  padding: 8px 10px;
+	  border-radius: 10px;
+
+	  background: rgba(10, 12, 18, 0.95);
+	  border: 1px solid rgba(255,255,255,0.14);
+	  box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+
+	  color: rgba(255,255,255,0.92);
+	  font-size: 12px;
+	  font-weight: 650;
+	  letter-spacing: 0.01em;
+	}
+
+	.esus-tip b { font-weight: 800; }
+
+	.esus-tip::after {
+	  content: "";
+	  position: absolute;
+	  left: 14px;
+	  top: 100%;
+	  border: 7px solid transparent;
+	  border-top-color: rgba(10, 12, 18, 0.95);
+	}
+		
   </style>
 </head>
 
