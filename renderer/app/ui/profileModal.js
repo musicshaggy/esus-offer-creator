@@ -15,9 +15,8 @@ function deriveInitials(fullName) {
     .filter(Boolean);
 
   if (parts.length === 1) {
-    // jeśli ktoś wpisał tylko jedno słowo, bierzemy 2 pierwsze litery
     const w = parts[0];
-    return (w.slice(0, 2)).toUpperCase();
+    return w.slice(0, 2).toUpperCase();
   }
 
   const first = parts[0][0] || "";
@@ -25,11 +24,28 @@ function deriveInitials(fullName) {
   return (first + last).toUpperCase();
 }
 
-function show() {
-  el("profileModalBackdrop").style.display = "block";
+function normalizeInitials(v) {
+  const s = String(v || "").trim().toUpperCase();
+
+  // blokujemy placeholdery/śmieci (dopasuj jeśli chcesz inne reguły)
+  if (!s) return "";
+  if (s === "XX") return "";
+
+  // 2–5 znaków A-Z/0-9
+  if (!/^[A-Z0-9]{2,5}$/.test(s)) return "";
+  return s;
 }
+
+function show() {
+  const bd = el("profileModalBackdrop");
+  if (!bd) return;
+  bd.style.display = "block";
+}
+
 function hide() {
-  el("profileModalBackdrop").style.display = "none";
+  const bd = el("profileModalBackdrop");
+  if (!bd) return;
+  bd.style.display = "none";
 }
 
 export async function ensureUserProfile() {
@@ -44,53 +60,71 @@ export async function ensureUserProfile() {
   // pokaż modal i wypełnij jeśli coś jest
   show();
 
-  el("profileFullName").value = profile?.fullName || "";
-  el("profileEmail").value = profile?.email || "";
-  el("profilePhone").value = profile?.phone || "";
-  el("profileInitials").value = profile?.initials || deriveInitials(profile?.fullName || "");
+  const fullNameEl = el("profileFullName");
+  const emailEl = el("profileEmail");
+  const phoneEl = el("profilePhone");
+  const initialsEl = el("profileInitials");
+  const cancelBtn = el("profileCancelBtn");
+  const saveBtn = el("profileSaveBtn");
 
-  // auto inicjały przy wpisywaniu imienia/nazwiska
-  el("profileFullName").addEventListener("input", () => {
-    const auto = deriveInitials(el("profileFullName").value);
-    // nie nadpisuj jeśli user już wpisał ręcznie coś innego i nie jest puste
-    if (!el("profileInitials").value.trim()) el("profileInitials").value = auto;
-  }, { once: false });
-  
-  let initialsTouched = false;
+  if (!fullNameEl || !emailEl || !phoneEl || !initialsEl || !cancelBtn || !saveBtn) {
+    // jeśli modal nie istnieje w DOM, nie blokuj całej aplikacji bez jasnego błędu
+    throw new Error("Brak elementów modala profilu w DOM (profileModalBackdrop / pola / przyciski).");
+  }
 
-	el("profileInitials").addEventListener("input", () => {
-	  initialsTouched = !!el("profileInitials").value.trim();
-	});
+  fullNameEl.value = profile?.fullName || "";
+  emailEl.value = profile?.email || "";
+  phoneEl.value = profile?.phone || "";
 
-	el("profileFullName").addEventListener("input", () => {
-	  if (initialsTouched) return; // user ręcznie ustawił inicjały
-	  el("profileInitials").value = deriveInitials(el("profileFullName").value);
-	});
+  // inicjały: najpierw to co w profilu, potem auto z nazwiska
+  initialsEl.value = normalizeInitials(profile?.initials) || deriveInitials(profile?.fullName || "");
+
+  // zabezpieczenie przed wielokrotnym podpinaniem listenerów
+  if (!fullNameEl.dataset.boundInitials) {
+    fullNameEl.dataset.boundInitials = "1";
+    initialsEl.dataset.touched = "0";
+
+    initialsEl.addEventListener("input", () => {
+      initialsEl.dataset.touched = initialsEl.value.trim() ? "1" : "0";
+    });
+
+    fullNameEl.addEventListener("input", () => {
+      // jeśli user ręcznie ustawił inicjały, nie nadpisuj
+      if (initialsEl.dataset.touched === "1") return;
+      initialsEl.value = deriveInitials(fullNameEl.value);
+    });
+  }
 
   return await new Promise((resolve) => {
-    el("profileCancelBtn").onclick = async () => {
-      // jeśli cancel na pierwszym uruchomieniu – zostawiamy modal (nie da się pracować bez profilu)
-      // możesz zmienić na "zamknij aplikację" jeśli wolisz twardo
+    cancelBtn.onclick = async () => {
+      // Na pierwszym uruchomieniu profil jest wymagany
       alert("Profil jest wymagany, aby aplikacja mogła nadawać numerację i uzupełniać dane.");
     };
 
-    el("profileSaveBtn").onclick = async () => {
-      const fullName = el("profileFullName").value.trim();
-      const email = el("profileEmail").value.trim();
-      const phone = el("profilePhone").value.trim();
-      const initials = (el("profileInitials").value.trim() || deriveInitials(fullName)).toUpperCase();
+    saveBtn.onclick = async () => {
+      const fullName = fullNameEl.value.trim();
+      const email = emailEl.value.trim();
+      const phone = phoneEl.value.trim();
+
+      // inicjały: z pola albo auto z nazwiska, ale po walidacji
+      const initials = normalizeInitials(initialsEl.value) || normalizeInitials(deriveInitials(fullName));
 
       if (!fullName || !email || !phone || !initials) {
-        alert("Uzupełnij: imię i nazwisko, e-mail, telefon oraz inicjały.");
+        alert("Uzupełnij: imię i nazwisko, e-mail, telefon oraz poprawne inicjały (np. JK).");
         return;
       }
 
-      const next = await setUserSettings({
+      // 1) zapisz ustawienia
+      await setUserSettings({
         profile: { fullName, email, phone, initials }
       });
 
+      // 2) KLUCZ: wymuś re-read po zapisie (produkcja potrafi mieć inny timing)
+      const fresh = await getUserSettings();
+      const freshProfile = fresh?.profile || { fullName, email, phone, initials };
+
       hide();
-      resolve(next.profile);
+      resolve(freshProfile);
     };
   });
 }
@@ -106,4 +140,3 @@ export function applyProfileToForm(profile) {
   if (emailEl && !emailEl.value.trim()) emailEl.value = profile.email;
   if (phoneEl && !phoneEl.value.trim()) phoneEl.value = profile.phone;
 }
-
