@@ -2,6 +2,14 @@ import { getUserSettings, setUserSettings } from "../state/userSettings.js";
 
 const el = (id) => document.getElementById(id);
 
+function isProfileModalOpen() {
+  const bd = document.getElementById("profileModalBackdrop");
+  if (!bd) return false;
+  // dopasuj do swojego sposobu pokazywania (display / klasa)
+  return bd.style.display !== "none" && bd.style.display !== "";
+}
+
+
 function deriveInitials(fullName) {
   const cleaned = String(fullName || "")
     .trim()
@@ -46,6 +54,51 @@ function hide() {
   const bd = el("profileModalBackdrop");
   if (!bd) return;
   bd.style.display = "none";
+}
+
+let profileErrorTimer = null;
+
+function showProfileError(msg, focusId) {
+  const err = document.getElementById("profileError");
+  if (!err) return;
+
+  const textEl = err.querySelector(".profileErrorText");
+  const closeBtn = err.querySelector(".profileErrorClose");
+
+  if (textEl) textEl.textContent = msg;
+
+  err.style.display = "flex";
+  err.classList.remove("is-show");
+  void err.offsetWidth; // restart animacji
+  err.classList.add("is-show");
+
+  // ręczne zamknięcie
+  if (closeBtn && !closeBtn.dataset.bound) {
+    closeBtn.dataset.bound = "1";
+    closeBtn.addEventListener("click", clearProfileError);
+  }
+
+  // auto-close po 3s (reset przy kolejnym błędzie)
+  if (profileErrorTimer) clearTimeout(profileErrorTimer);
+  profileErrorTimer = setTimeout(clearProfileError, 3000);
+
+  // focus na pole (jeśli podane)
+  if (focusId) {
+    setTimeout(() => document.getElementById(focusId)?.focus?.(), 0);
+  }
+}
+
+function clearProfileError() {
+  const err = document.getElementById("profileError");
+  if (!err) return;
+
+  err.style.display = "none";
+  err.classList.remove("is-show");
+
+  if (profileErrorTimer) {
+    clearTimeout(profileErrorTimer);
+    profileErrorTimer = null;
+  }
 }
 
 export async function ensureUserProfile() {
@@ -98,7 +151,7 @@ export async function ensureUserProfile() {
   return await new Promise((resolve) => {
     cancelBtn.onclick = async () => {
       // Na pierwszym uruchomieniu profil jest wymagany
-      alert("Profil jest wymagany, aby aplikacja mogła nadawać numerację i uzupełniać dane.");
+      showProfileError("Profil jest wymagany, aby aplikacja mogła nadawać numerację ofert.", "profileFullName");
     };
 
     saveBtn.onclick = async () => {
@@ -110,7 +163,7 @@ export async function ensureUserProfile() {
       const initials = normalizeInitials(initialsEl.value) || normalizeInitials(deriveInitials(fullName));
 
       if (!fullName || !email || !phone || !initials) {
-        alert("Uzupełnij: imię i nazwisko, e-mail, telefon oraz poprawne inicjały (np. JK).");
+        showProfileError("Uzupełnij imię i nazwisko.", "profileFullName");
         return;
       }
 
