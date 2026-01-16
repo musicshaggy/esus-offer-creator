@@ -1,0 +1,24 @@
+# Node / Electron
+node_modules/
+dist/
+out/
+win-unpacked/
+
+# Build artefakty
+*.log
+*.tmp
+*.asar
+*.exe
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Electron cache / runtime
+.userData/
+.user-settings.json
+
+# IDE
+.vscode/
+.idea/
