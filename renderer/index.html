@@ -748,6 +748,12 @@
 	  border: 7px solid transparent;
 	  border-top-color: rgba(10, 12, 18, 0.95);
 	}
+	#appVersion{
+	  opacity: 0.55;
+	  font-size: 12px;
+	  font-weight: 600;
+	  letter-spacing: 0.02em;
+	}
 		
   </style>
 </head>
@@ -756,7 +762,7 @@
 
 <div class="app-titlebar" id="appTitlebar">
   <div class="app-titlebar-drag">
-    <span class="app-titlebar-text">ESUS – Generator wyceny</span>
+    <span class="app-titlebar-text">ESUS – Generator wyceny <span id="appVersion"></span></span>
   </div>
   <div class="app-win-controls">
     <button class="app-wc-btn" id="btnWinMin" title="Minimalizuj">—</button>

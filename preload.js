@@ -26,4 +26,5 @@ contextBridge.exposeInMainWorld("esusAPI", {
   fileSaveJson: (args) => ipcRenderer.invoke("file:saveJson", args),
   fileLoadJson: () => ipcRenderer.invoke("file:loadJson"),
   exportExcel: (args) => ipcRenderer.invoke("export:excel", args),
+  getAppVersion: () => ipcRenderer.invoke("app:getVersion")
 });

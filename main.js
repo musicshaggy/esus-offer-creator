@@ -348,6 +348,10 @@ ipcMain.handle("window:minimize", (evt) => {
   win?.minimize();
 });
 
+ipcMain.handle("app:getVersion", () => {
+  return app.getVersion();
+});
+
 ipcMain.handle("window:toggleMaximize", (evt) => {
   const win = BrowserWindow.fromWebContents(evt.sender);
   if (!win) return { maximized: false };

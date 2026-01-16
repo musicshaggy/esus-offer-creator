@@ -364,6 +364,21 @@ const offersCtl = initOffersSubpage({
   }
 }
 
+async function initAppVersion() {
+  const el = document.getElementById("appVersion");
+  if (!el) return;
+
+  try {
+    const v = await window.esusAPI.getAppVersion();
+    el.textContent = `v${v}`;
+  } catch {
+    el.textContent = "";
+  }
+}
+
+initAppVersion();
+
+
 // ===== Currency dropdown (PLN/USD/EUR) – UI only =====
 (function initCurrencyDropdown() {
 	let activePortal = null; // { menu, btn, wrap, placeholder }
