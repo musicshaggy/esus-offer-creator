@@ -748,7 +748,96 @@
 	  border: 7px solid transparent;
 	  border-top-color: rgba(10, 12, 18, 0.95);
 	}
-		
+	#appVersion{
+	  opacity: 0.55;
+	  font-size: 12px;
+	  font-weight: 600;
+	  letter-spacing: 0.02em;
+	}
+	/* ===== Global toast/banner (bez alert()) ===== */
+	#appToast.appToast{
+	  position: fixed;
+	  left: 50%;
+	  bottom: 18px;
+	  transform: translateX(-50%);
+
+	  z-index: 30000;
+	  display: none;
+
+	  max-width: min(640px, calc(100vw - 32px));
+	  padding: 12px 14px;
+	  border-radius: 14px;
+
+	  background: rgba(10, 12, 18, 0.96);
+	  border: 1px solid rgba(255,255,255,0.14);
+	  box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+
+	  color: rgba(255,255,255,0.92);
+	  font-size: 13px;
+	  font-weight: 650;
+
+	  display: flex;
+	  align-items: center;
+	  gap: 12px;
+	}
+
+	#appToast .appToastText{ flex: 1; }
+
+	#appToast .appToastClose{
+	  appearance: none;
+	  border: none;
+	  background: transparent;
+	  color: #fff;
+	  font-size: 18px;
+	  font-weight: 800;
+	  line-height: 1;
+	  cursor: pointer;
+	  opacity: 0.85;
+	  padding: 0 4px;
+	}
+	#appToast .appToastClose:hover{ opacity: 1; }
+
+	/* wariant error */
+	#appToast.is-error{
+	  border-color: rgba(255, 80, 80, 0.50);
+	  background: linear-gradient(180deg, rgba(150, 25, 25, 0.96), rgba(105, 18, 18, 0.96));
+	}
+
+	/* animacja wejścia */
+	#appToast.is-show{
+	  animation: appToastIn 160ms ease-out;
+	}
+	@keyframes appToastIn{
+	  from{ opacity:0; transform: translate(-50%, 6px); }
+	  to  { opacity:1; transform: translate(-50%, 0); }
+	}
+	#appToast .appToastActions{
+	  display: inline-flex;
+	  gap: 8px;
+	  align-items: center;
+	}
+
+	#appToast .appToastBtn{
+	  height: 30px;
+	  padding: 0 10px;
+	  border-radius: 10px;
+	  border: 1px solid rgba(255,255,255,0.14);
+	  background: rgba(255,255,255,0.08);
+	  color: rgba(255,255,255,0.92);
+	  font-weight: 750;
+	  font-size: 12px;
+	  cursor: pointer;
+	}
+
+	#appToast .appToastBtn:hover{
+	  filter: brightness(1.06);
+	}
+
+	#appToast .appToastBtnPrimary{
+	  background: rgba(255,255,255,0.14);
+	  border-color: rgba(255,255,255,0.22);
+	}
+
   </style>
 </head>
 
@@ -756,7 +845,7 @@
 
 <div class="app-titlebar" id="appTitlebar">
   <div class="app-titlebar-drag">
-    <span class="app-titlebar-text">ESUS – Generator wyceny</span>
+    <span class="app-titlebar-text">ESUS – Generator wyceny <span id="appVersion"></span></span>
   </div>
   <div class="app-win-controls">
     <button class="app-wc-btn" id="btnWinMin" title="Minimalizuj">—</button>
@@ -940,14 +1029,16 @@
           </select>
         </div>
         <div id="invoiceDaysWrap" style="display:none;">
-          <label>Termin płatności (dni)</label>
-          <select id="invoiceDays">
-            <option>3</option>
-            <option>5</option>
-            <option>7</option>
-            <option>13</option>
-            <option selected>30</option>
-          </select>
+		<label class="mini" for="invoiceDays">Termin płatności (dni)</label>
+		<input
+		  id="invoiceDays"
+		  type="number"
+		  min="1"
+		  max="60"
+		  step="1"
+		  inputmode="numeric"
+		  placeholder="np. 14"
+		>
         </div>
 
         <div style="grid-column:1/-1">
