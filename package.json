@@ -27,14 +27,16 @@
       "package.json"
     ],
     "win": {
-      "icon": "build/favicon.ico"
-    },
-    "publish": [
+      "icon": "build/favicon.ico",
+	  "publish": [
       {
         "provider": "github",
         "owner": "musicshaggy",
-        "repo": "esus-offer-creator"
+        "repo": "esus-offer-creator",
+		"releaseType": "release"
       }
     ]
+    }
+    
   }
 }
