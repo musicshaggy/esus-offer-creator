@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const { autoUpdater } = require("electron-updater");
 
 app.setPath("userData", path.join(os.homedir(), "AppData", "Local", "ESUS-Quote"));
 
@@ -204,6 +205,7 @@ app.whenReady().then(() => {
   splashClosed = false;
   createSplash();
   createWindow();
+  initAutoUpdater(win);
 });
 
 app.on("window-all-closed", () => {
@@ -434,4 +436,45 @@ ipcMain.handle("window:close", (evt) => {
 ipcMain.handle("window:isMaximized", (evt) => {
   const win = BrowserWindow.fromWebContents(evt.sender);
   return { maximized: !!win?.isMaximized() };
+});
+
+function initAutoUpdater(win) {
+  autoUpdater.autoDownload = false; // kontrolujemy UX
+
+  autoUpdater.on("update-available", (info) => {
+    win.webContents.send("upd:update-available", { version: info?.version });
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    // opcjonalnie: nic nie rób
+  });
+
+  autoUpdater.on("download-progress", (p) => {
+    // opcjonalnie: procenty
+    win.webContents.send("upd:download-progress", {
+      percent: Math.round(p?.percent ?? 0),
+    });
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    win.webContents.send("upd:update-downloaded", { version: info?.version });
+  });
+
+  autoUpdater.on("error", (err) => {
+    win.webContents.send("upd:update-error", { message: String(err?.message || err) });
+  });
+
+  // sprawdź na starcie
+  autoUpdater.checkForUpdates();
+}
+
+// IPC: kliknięcia z renderera
+ipcMain.handle("upd:download", async () => {
+  await autoUpdater.downloadUpdate();
+  return true;
+});
+
+ipcMain.handle("upd:quitAndInstall", async () => {
+  autoUpdater.quitAndInstall(false, true);
+  return true;
 });
