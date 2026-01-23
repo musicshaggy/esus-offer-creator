@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.1.0",
-    "electron-updater": "^6.7.3"
+    "electron-updater": "^6.4.0"
   },
   "build": {
     "appId": "pl.esus.app",
@@ -27,16 +27,7 @@
       "package.json"
     ],
     "win": {
-      "icon": "build/favicon.ico",
-	  "publish": [
-      {
-        "provider": "github",
-        "owner": "musicshaggy",
-        "repo": "esus-offer-creator",
-		"releaseType": "release"
-      }
-    ]
+      "icon": "build/favicon.ico"
     }
-    
   }
 }

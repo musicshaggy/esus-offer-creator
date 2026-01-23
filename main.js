@@ -162,11 +162,10 @@ function buildOfferNo(seq, initials) {
   return `${lp}/${initials}/${m}/${y}`;
 }
 
-
 /**
- * Compute next offer sequence number for given initials and year/month (1-12),
+ * Compute next offer sequence number for given initials and year/month (1-12)
  * using "smallest missing positive integer" among existing offers.
- * This makes numbering fill gaps after deletions (e.g. delete 3 -> next is 3).
+ * This fills gaps after deletions (e.g. delete 3 -> next is 3).
  */
 function computeNextSeqFromOffers(initials, year, month) {
   const y = String(year);
@@ -174,8 +173,6 @@ function computeNextSeqFromOffers(initials, year, month) {
   const ini = String(initials || "XX").trim().toUpperCase() || "XX";
 
   const used = new Set();
-
-  // Iterate over all offer files (not only index) to be robust against index drift
   const dir = offersDir();
   const files = fs.readdirSync(dir).filter((f) => f.endsWith(".json"));
 
@@ -201,10 +198,13 @@ function computeNextSeqFromOffers(initials, year, month) {
   return next;
 }
 
+
 app.whenReady().then(() => {
   splashClosed = false;
   createSplash();
   createWindow();
+
+  // init auto-update after creating main window
   initAutoUpdater(win);
 });
 
@@ -263,17 +263,8 @@ ipcMain.handle("offers:open", async (_evt, id) => {
 });
 
 
-
-ipcMain.handle("offers:nextSeq", async (_evt, { initials, year, month }) => {
-  const ini = String(initials || "XX").trim().toUpperCase() || "XX";
-  const y = Number(year) || new Date().getFullYear();
-  const m = Number(month) || (new Date().getMonth() + 1);
-  return computeNextSeqFromOffers(ini, y, m);
-});
-
-
 async function createFreshOfferPayload() {
-  // Create fresh payload with auto numbering based on *existing offers* (gap-filling).
+  // Create fresh payload with auto numbering based on existing offers (gap-filling).
   const settings = readJsonSafe(getSettingsPath(), { initials: "XX", offerSeq: {}, profile: null });
   const initials = (settings?.profile?.initials || settings?.initials || "XX").trim().toUpperCase() || "XX";
 
@@ -314,7 +305,6 @@ async function createFreshOfferPayload() {
   writeOffersIndex({ ids });
   return payload;
 }
-
 
 ipcMain.handle("offers:new", async () => {
   return await createFreshOfferPayload();
@@ -438,65 +428,66 @@ ipcMain.handle("window:isMaximized", (evt) => {
   return { maximized: !!win?.isMaximized() };
 });
 
-function initAutoUpdater(win) {
-  // --- konfiguracja ---
+ipcMain.handle("offers:nextSeq", async (_evt, { initials, year, month }) => {
+  const ini = String(initials || "XX").trim().toUpperCase() || "XX";
+  const y = Number(year) || new Date().getFullYear();
+  const m = Number(month) || (new Date().getMonth() + 1);
+  return computeNextSeqFromOffers(ini, y, m);
+});
+
+// ===== Auto-update (electron-updater) =====
+let _updaterInited = false;
+function initAutoUpdater(mainWin) {
+  if (_updaterInited || !mainWin) return;
+  _updaterInited = true;
+
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
 
-  // --- stan updatera (ważne dla UI) ---
-  let updState = {
-    available: null,   // { version }
-    downloaded: null,  // { version }
-    error: null
+  const updState = {
+    available: null,
+    downloaded: null,
+    error: null,
   };
 
-  // --- EVENTS ---
   autoUpdater.on("update-available", (info) => {
     updState.available = { version: info?.version };
-    win.webContents.send("upd:update-available", updState.available);
+    mainWin.webContents.send("upd:update-available", updState.available);
   });
 
   autoUpdater.on("download-progress", (p) => {
-    win.webContents.send("upd:download-progress", {
+    mainWin.webContents.send("upd:download-progress", {
       percent: Math.round(p?.percent ?? 0),
     });
   });
 
   autoUpdater.on("update-downloaded", (info) => {
     updState.downloaded = { version: info?.version };
-    win.webContents.send("upd:update-downloaded", updState.downloaded);
+    mainWin.webContents.send("upd:update-downloaded", updState.downloaded);
   });
 
   autoUpdater.on("error", (err) => {
     updState.error = { message: String(err?.message || err) };
-    win.webContents.send("upd:update-error", updState.error);
+    mainWin.webContents.send("upd:update-error", updState.error);
   });
 
-  // 🔑 KLUCZ: jeśli event wpadł zanim renderer wstał → wyślij jeszcze raz
-  win.webContents.on("did-finish-load", () => {
-    if (updState.available) {
-      win.webContents.send("upd:update-available", updState.available);
-    }
-    if (updState.downloaded) {
-      win.webContents.send("upd:update-downloaded", updState.downloaded);
-    }
-    if (updState.error) {
-      win.webContents.send("upd:update-error", updState.error);
-    }
+  // re-emit state after renderer loads (prevents race where events fire before listeners)
+  mainWin.webContents.on("did-finish-load", () => {
+    if (updState.available) mainWin.webContents.send("upd:update-available", updState.available);
+    if (updState.downloaded) mainWin.webContents.send("upd:update-downloaded", updState.downloaded);
+    if (updState.error) mainWin.webContents.send("upd:update-error", updState.error);
   });
 
-  // --- start ---
+  ipcMain.handle("upd:getStatus", async () => updState);
+  ipcMain.handle("upd:download", async () => {
+    await autoUpdater.checkForUpdates();
+    await autoUpdater.downloadUpdate();
+    return true;
+  });
+  ipcMain.handle("upd:quitAndInstall", async () => {
+    autoUpdater.quitAndInstall(false, true);
+    return true;
+  });
+
   autoUpdater.checkForUpdates();
 }
-
-
-// IPC: kliknięcia z renderera
-ipcMain.handle("upd:download", async () => {
-  await autoUpdater.downloadUpdate();
-  return true;
-});
-
-ipcMain.handle("upd:quitAndInstall", async () => {
-  autoUpdater.quitAndInstall(false, true);
-  return true;
-});

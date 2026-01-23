@@ -13,8 +13,13 @@ import { renderItems } from "./ui/itemsTable.js";
 import { clearSavedState, loadStateFromStorage } from "./state/persistence.js";
 import { generatePdf } from "./export/pdf.js";
 import { initExcelExport } from "./export/excel.js";
-import { showToast, showToastAction, showToastProgress, updateToastProgress, endToastProgress } from "./ui/toast.js";
-
+import {
+  showToast,
+  showToastAction,
+  showToastProgress,
+  updateToastProgress,
+  endToastProgress,
+} from "./ui/toast.js";
 
 
 
@@ -28,7 +33,6 @@ import {
 } from "./offers/offersController.js";
 
 let cameFromMainPage = false;
-let currentOfferId = null;
 
 function showPage(pageId) {
   const mainPage = document.getElementById("mainPage");
@@ -54,12 +58,10 @@ function showPage(pageId) {
   if (headerTitle) {
     headerTitle.textContent = pageId === "offersPage" ? "Oferty" : "Generator wyceny (PDF)";
   }
-	if (btnBack) {
-	  btnBack.style.display =
-		pageId === "offersPage" && cameFromMainPage && !!currentOfferId
-		  ? "inline-flex"
-		  : "none";
-	}
+  if (btnBack) {
+    btnBack.style.display =
+      pageId === "offersPage" && cameFromMainPage ? "inline-flex" : "none";
+  }
 }
 
 
@@ -316,7 +318,6 @@ async function init() {
       onNewOffer: async () => {
         const p = await createNewOffer(deps);
         setActiveOffer(p);
-		currentOfferId = p?.id || null;
 
         if (el("offerNumberPreview")) {
           el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
@@ -333,7 +334,6 @@ async function init() {
 
       onOpenOfferLoaded: async (p) => {
         setActiveOffer(p);
-		currentOfferId = p?.id || null;
 
         if (el("offerNumberPreview")) {
           el("offerNumberPreview").textContent =
@@ -385,7 +385,6 @@ async function init() {
     el("btnNewOffer")?.addEventListener("click", async () => {
       const p = await createNewOffer(deps);
       setActiveOffer(p);
-	  currentOfferId = p?.id || null;
 
       if (el("offerNumberPreview")) {
         el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
@@ -411,19 +410,6 @@ async function init() {
       },
     });
   }
-  window.addEventListener("esus:offerDeleted", (ev) => {
-  const deletedId = ev?.detail?.id || null;
-  if (!deletedId) return;
-
-  if (currentOfferId && deletedId === currentOfferId) {
-    // Usunięto ofertę, do której mieliśmy wrócić -> nie ma już "Powrót"
-    currentOfferId = null;
-    cameFromMainPage = false;
-
-    const btnBack = document.getElementById("btnOffersBack");
-    if (btnBack) btnBack.style.display = "none";
-  }
-});
 }
 
 async function initAppVersion() {
@@ -440,6 +426,7 @@ async function initAppVersion() {
 
 initAppVersion();
 
+// ===== Auto-update toasts (electron-updater) =====
 function initUpdateToasts() {
   if (!window.esusAPI?.onUpdateAvailable) return;
 
@@ -454,19 +441,18 @@ function initUpdateToasts() {
       actionLabel: "Pobierz",
       secondaryLabel: "Później",
       onSecondary: async () => {},
-
+      keepOpenOnAction: true,
       onAction: async () => {
         try {
           downloading = true;
           lastPct = -1;
-
           showToastProgress("Pobieranie aktualizacji…");
-
           await window.esusAPI.updateDownload();
-          // UWAGA: dalej czekamy na event update-downloaded
+          // UI przejdzie do "Uruchom ponownie" po evencie update-downloaded
         } catch (e) {
           downloading = false;
           endToastProgress();
+          console.warn(e);
           showToast("Nie udało się pobrać aktualizacji.", { type: "error", ms: 4500 });
         }
       },
@@ -475,14 +461,11 @@ function initUpdateToasts() {
 
   window.esusAPI.onUpdateProgress?.((p) => {
     if (!downloading) return;
-
     const pct = Number(p?.percent ?? 0);
     if (!Number.isFinite(pct)) return;
-
     const rounded = Math.max(0, Math.min(100, Math.round(pct)));
     if (rounded === lastPct) return;
     lastPct = rounded;
-
     updateToastProgress(rounded);
   });
 
@@ -493,7 +476,7 @@ function initUpdateToasts() {
     const v = d?.version ? ` v${d.version}` : "";
     showToastAction(`Aktualizacja${v} pobrana.`, {
       type: "info",
-      ms: 0, // <- nie znika samo, user ma kliknąć restart
+      ms: 0,
       actionLabel: "Uruchom ponownie",
       secondaryLabel: "Później",
       onSecondary: async () => {},
@@ -509,11 +492,25 @@ function initUpdateToasts() {
     console.warn("Updater error:", d);
     showToast("Błąd aktualizacji (szczegóły w konsoli).", { type: "error", ms: 5000 });
   });
+
+  // jeśli update był już pobrany zanim renderer wystartował – pokaż od razu
+  window.esusAPI.updateGetStatus?.().then((st) => {
+    if (st?.downloaded?.version) {
+      const v = ` v${st.downloaded.version}`;
+      showToastAction(`Aktualizacja${v} pobrana.`, {
+        type: "info",
+        ms: 0,
+        actionLabel: "Uruchom ponownie",
+        secondaryLabel: "Później",
+        onSecondary: async () => {},
+        onAction: async () => window.esusAPI.updateQuitAndInstall(),
+      });
+    }
+  }).catch(() => {});
 }
 
-
-
 initUpdateToasts();
+
 
 // ===== Currency dropdown (PLN/USD/EUR) – UI only =====
 (function initCurrencyDropdown() {

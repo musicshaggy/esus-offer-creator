@@ -46,24 +46,9 @@ export async function loadUserInitialsAndSeq({ getInitialsEl, setInitialsEl, set
   const s = await getUserSettings();
   if (s.initials && setInitialsEl) setInitialsEl.value = s.initials;
 
-  const initials = (getInitialsEl?.value || s.initials || "XX").trim().toUpperCase() || "XX";
-
-  // Prefer IPC-provided gap-filling sequence (prod-safe, based on existing offers).
-  let seq = 1;
-  try {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-    if (window.esusAPI?.getNextOfferSeq) {
-      seq = await window.esusAPI.getNextOfferSeq(initials, year, month);
-    } else {
-      const key = offerKey(initials);
-      seq = (s.offerSeq && s.offerSeq[key]) ? s.offerSeq[key] : 1;
-    }
-  } catch {
-    const key = offerKey(initials);
-    seq = (s.offerSeq && s.offerSeq[key]) ? s.offerSeq[key] : 1;
-  }
+  const initials = (getInitialsEl?.value || s.initials || "XX").trim().toUpperCase();
+  const key = offerKey(initials);
+  const seq = (s.offerSeq && s.offerSeq[key]) ? s.offerSeq[key] : 1;
 
   if (setSeqEl) setSeqEl.value = String(seq);
   return { initials, seq };
