@@ -316,6 +316,7 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
           onAction: async () => {
             try {
               await window.esusAPI.offersDelete(id);
+			  window.dispatchEvent(new CustomEvent("esus:offerDeleted", { detail: { id } }));
               await refresh();
               showToast("Oferta usunięta.", { type: "info", ms: 2500 });
             } catch (e) {

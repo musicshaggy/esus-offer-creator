@@ -27,6 +27,7 @@ import {
 } from "./offers/offersController.js";
 
 let cameFromMainPage = false;
+let currentOfferId = null;
 
 function showPage(pageId) {
   const mainPage = document.getElementById("mainPage");
@@ -52,10 +53,12 @@ function showPage(pageId) {
   if (headerTitle) {
     headerTitle.textContent = pageId === "offersPage" ? "Oferty" : "Generator wyceny (PDF)";
   }
-  if (btnBack) {
-    btnBack.style.display =
-      pageId === "offersPage" && cameFromMainPage ? "inline-flex" : "none";
-  }
+	if (btnBack) {
+	  btnBack.style.display =
+		pageId === "offersPage" && cameFromMainPage && !!currentOfferId
+		  ? "inline-flex"
+		  : "none";
+	}
 }
 
 
@@ -312,6 +315,7 @@ async function init() {
       onNewOffer: async () => {
         const p = await createNewOffer(deps);
         setActiveOffer(p);
+		currentOfferId = p?.id || null;
 
         if (el("offerNumberPreview")) {
           el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
@@ -328,6 +332,7 @@ async function init() {
 
       onOpenOfferLoaded: async (p) => {
         setActiveOffer(p);
+		currentOfferId = p?.id || null;
 
         if (el("offerNumberPreview")) {
           el("offerNumberPreview").textContent =
@@ -379,6 +384,7 @@ async function init() {
     el("btnNewOffer")?.addEventListener("click", async () => {
       const p = await createNewOffer(deps);
       setActiveOffer(p);
+	  currentOfferId = p?.id || null;
 
       if (el("offerNumberPreview")) {
         el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
@@ -404,6 +410,19 @@ async function init() {
       },
     });
   }
+  window.addEventListener("esus:offerDeleted", (ev) => {
+  const deletedId = ev?.detail?.id || null;
+  if (!deletedId) return;
+
+  if (currentOfferId && deletedId === currentOfferId) {
+    // Usunięto ofertę, do której mieliśmy wrócić -> nie ma już "Powrót"
+    currentOfferId = null;
+    cameFromMainPage = false;
+
+    const btnBack = document.getElementById("btnOffersBack");
+    if (btnBack) btnBack.style.display = "none";
+  }
+});
 }
 
 async function initAppVersion() {
