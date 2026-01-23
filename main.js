@@ -29,6 +29,14 @@ function closeSplashOnce() {
   closeSplash();
 }
 
+function todayYMD() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 
 function createSplash() {
   splashWin = new BrowserWindow({
@@ -154,6 +162,44 @@ function buildOfferNo(seq, initials) {
 }
 
 
+/**
+ * Compute next offer sequence number for given initials and year/month (1-12),
+ * using "smallest missing positive integer" among existing offers.
+ * This makes numbering fill gaps after deletions (e.g. delete 3 -> next is 3).
+ */
+function computeNextSeqFromOffers(initials, year, month) {
+  const y = String(year);
+  const m = pad2(month);
+  const ini = String(initials || "XX").trim().toUpperCase() || "XX";
+
+  const used = new Set();
+
+  // Iterate over all offer files (not only index) to be robust against index drift
+  const dir = offersDir();
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith(".json"));
+
+  for (const f of files) {
+    const p = path.join(dir, f);
+    const payload = readJsonSafe(p, null);
+    const no = payload?.meta?.offerNo || payload?.offerNo || "";
+    const m2 = String(no).match(/^0?(\d+)\/([A-Z0-9]{2,5})\/(\d{2})\/(\d{4})$/);
+    if (!m2) continue;
+
+    const seq = parseInt(m2[1], 10);
+    const iniNo = m2[2];
+    const mm = m2[3];
+    const yy = m2[4];
+
+    if (yy === y && mm === m && iniNo === ini && Number.isFinite(seq) && seq > 0) {
+      used.add(seq);
+    }
+  }
+
+  let next = 1;
+  while (used.has(next)) next += 1;
+  return next;
+}
+
 app.whenReady().then(() => {
   splashClosed = false;
   createSplash();
@@ -215,16 +261,28 @@ ipcMain.handle("offers:open", async (_evt, id) => {
 });
 
 
+
+ipcMain.handle("offers:nextSeq", async (_evt, { initials, year, month }) => {
+  const ini = String(initials || "XX").trim().toUpperCase() || "XX";
+  const y = Number(year) || new Date().getFullYear();
+  const m = Number(month) || (new Date().getMonth() + 1);
+  return computeNextSeqFromOffers(ini, y, m);
+});
+
+
 async function createFreshOfferPayload() {
-  // create fresh payload with auto numbering based on settings
+  // Create fresh payload with auto numbering based on *existing offers* (gap-filling).
   const settings = readJsonSafe(getSettingsPath(), { initials: "XX", offerSeq: {}, profile: null });
   const initials = (settings?.profile?.initials || settings?.initials || "XX").trim().toUpperCase() || "XX";
-  const key = offerKey(initials);
-  const currentSeq = (settings.offerSeq && settings.offerSeq[key]) ? settings.offerSeq[key] : 1;
-  const offerNo = buildOfferNo(currentSeq, initials);
 
-  // bump seq for next offer
-  settings.offerSeq = { ...(settings.offerSeq || {}), [key]: currentSeq + 1 };
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+
+  const nextSeq = computeNextSeqFromOffers(initials, year, month);
+  const offerNo = buildOfferNo(nextSeq, initials);
+
+  // Keep initials in settings (legacy offerSeq is no longer used for numbering).
   settings.initials = initials;
   writeJsonSafe(getSettingsPath(), settings);
 
@@ -236,7 +294,12 @@ async function createFreshOfferPayload() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
-    fields: {},
+    fields: {
+      offerDate: todayYMD(),
+      paymentMethod: "invoice",
+      invoiceDays: 14,
+      shippingNet: 0,
+    },
     items: [],
     totals: null,
   };
@@ -249,6 +312,7 @@ async function createFreshOfferPayload() {
   writeOffersIndex({ ids });
   return payload;
 }
+
 
 ipcMain.handle("offers:new", async () => {
   return await createFreshOfferPayload();
@@ -371,4 +435,3 @@ ipcMain.handle("window:isMaximized", (evt) => {
   const win = BrowserWindow.fromWebContents(evt.sender);
   return { maximized: !!win?.isMaximized() };
 });
-
