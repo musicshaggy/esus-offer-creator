@@ -1,6 +1,8 @@
 import { money, ymdToPL, escapeHtml, toNumber } from "../utils/format.js";
 import { VAT_RATE } from "../config/constants.js";
 import { itemNetAfterDiscount } from "../calc/pricing.js";
+import { showToast } from "../ui/toast.js";
+
 
 function pickOfferNo(row) {
   return (
@@ -272,7 +274,7 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
           onBack?.(); // wróć do głównego ekranu po otwarciu
         } catch (e) {
           console.error(e);
-          alert("Nie udało się otworzyć oferty. Sprawdź konsolę.");
+          showToast("Nie udało się otworzyć oferty. Sprawdź konsolę.", { type: "error", ms: 3500 });
         }
       },
       onDuplicate: async (row, rowId) => {

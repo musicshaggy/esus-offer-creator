@@ -3,6 +3,8 @@ import { el, money, toNumber, ymdToPL } from "../utils/format.js";
 import { store } from "../state/store.js";
 import { itemNetAfterDiscount } from "../calc/pricing.js";
 import { buildOfferNumber } from "../ui/offerNumber.js";
+import { showToast } from "../ui/toast.js";
+
 
 async function arrayBufferToBase64(buffer) {
   let binary = "";
@@ -77,7 +79,7 @@ export async function generatePdf({ onBefore } = {}) {
   onBefore?.();
 
   if (store.items.length === 0) {
-    alert("Dodaj przynajmniej jedną pozycję.");
+    showToast("Dodaj przynajmniej jedną pozycję.", { type: "error", ms: 3500 } );
     return;
   }
 
@@ -90,8 +92,8 @@ export async function generatePdf({ onBefore } = {}) {
     fontName = "NotoSans";
   } catch (err) {
     console.error(err);
-    alert(
-      "Nie udało się załadować fontów do PDF (polskie znaki). PDF wygeneruje się czcionką domyślną."
+    showToast(
+      "Nie udało się załadować fontów do PDF (polskie znaki). PDF wygeneruje się czcionką domyślną.", { type: "error", ms: 3500 }
     );
   }
   doc.setFont(fontName, "normal");

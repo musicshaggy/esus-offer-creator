@@ -13,6 +13,9 @@ import { renderItems } from "./ui/itemsTable.js";
 import { clearSavedState, loadStateFromStorage } from "./state/persistence.js";
 import { generatePdf } from "./export/pdf.js";
 import { initExcelExport } from "./export/excel.js";
+import { showToast } from "./ui/toast.js";
+
+
 
 import {
   bootLastOrCreateNew,
@@ -29,15 +32,13 @@ function showPage(pageId) {
   const mainPage = document.getElementById("mainPage");
   const offersPage = document.getElementById("offersPage");
   if (!mainPage || !offersPage) return;
-  
+
   if (pageId === "offersPage") {
     cameFromMainPage = mainPage.classList.contains("is-active");
   }
 
   mainPage.classList.toggle("is-active", pageId === "mainPage");
   offersPage.classList.toggle("is-active", pageId === "offersPage");
-  
-
 
   // Shared header action sets (single header for both views)
   const actionsMain = document.getElementById("headerActionsMain");
@@ -51,11 +52,13 @@ function showPage(pageId) {
   if (headerTitle) {
     headerTitle.textContent = pageId === "offersPage" ? "Oferty" : "Generator wyceny (PDF)";
   }
-    if (btnBack) {
+  if (btnBack) {
     btnBack.style.display =
       pageId === "offersPage" && cameFromMainPage ? "inline-flex" : "none";
   }
 }
+
+
 
 function normalizeItem(it = {}) {
   return {
@@ -68,7 +71,7 @@ function normalizeItem(it = {}) {
 }
 
 async function autosaveActiveOffer() {
-if (document.getElementById("offersPage")?.classList.contains("is-active")) return;
+  if (document.getElementById("offersPage")?.classList.contains("is-active")) return;
   try {
     const payload = collectOfferPayload({ getItems, getTotals: getTotalsUI });
 
@@ -126,7 +129,7 @@ function wireClearButton() {
     setItems([]);
     renderItems({ onTotalsChanged: recalcTotalsUI, onStateChanged: () => scheduleAutosave(autosaveActiveOffer) });
     recalcTotalsUI();
-    alert("Wyczyszczono zapis lokalny (localStorage).");
+    showToast("Wyczyszczono zapis lokalny (localStorage).");
   });
 }
 
@@ -170,13 +173,13 @@ function wireTermsUi() {
   refresh();
 }
 
-	function formEl(id) {
-	  const root = document.getElementById("mainPage");
-	  if (!root) return document.getElementById(id);
-	  return root.querySelector(`#${CSS.escape(id)}`) || document.getElementById(id);
-	}
-	
-	function clearCustomerFields() {
+function formEl(id) {
+  const root = document.getElementById("mainPage");
+  if (!root) return document.getElementById(id);
+  return root.querySelector(`#${CSS.escape(id)}`) || document.getElementById(id);
+}
+
+function clearCustomerFields() {
   // Czyścimy UI zawsze przez formEl (root = #mainPage) – bez ryzyka konfliktu ID
   const ids = ["custName", "custNip", "custAddr", "custContact"];
   for (const id of ids) {
@@ -194,12 +197,52 @@ function wireTermsUi() {
   }
 }
 
+// [invoiceDays] helpers
+function clampInt(v, min, max, fallback) {
+  const s = String(v ?? "").trim();
+  if (!s) return fallback;
+  const n = parseInt(s.replace(/[^\d]/g, ""), 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+// [invoiceDays] apply + wire input (1–60)
+function applyInvoiceDaysToFormValue(raw) {
+  const node = formEl("invoiceDays");
+  if (!node) return;
+
+  // Uwaga: gdy pusta wartość w ofercie, zostaw puste (nie narzucaj defaultu w UI)
+  if (raw === undefined || raw === null || String(raw).trim() === "") {
+    node.value = "";
+    return;
+  }
+
+  const val = clampInt(raw, 1, 60, 14);
+  node.value = String(val);
+}
+
+function wireInvoiceDaysInput() {
+  const node = formEl("invoiceDays");
+  if (!node) return;
+
+  // input: zapisuje bezpiecznie (dociska w tle), ale nie zmienia użytkownikowi w trakcie pisania
+  node.addEventListener("input", () => {
+    const val = clampInt(node.value, 1, 60, 14);
+    // zapis do payload.fields i tak zrobi autosave (zbiera po id), ale tu trzymamy UI “w ryzach”
+    // nie ustawiamy node.value tutaj, żeby user mógł pisać
+    scheduleAutosave(autosaveActiveOffer);
+  });
+
+  // blur: docisk + wpisz do pola (żeby user widział finalną wartość)
+  node.addEventListener("blur", () => {
+    const val = clampInt(node.value, 1, 60, 14);
+    node.value = String(val);
+    scheduleAutosave(autosaveActiveOffer);
+  });
+}
 
 async function init() {
   initWindowControls();
-
-
-
 
   // date defaults (if field exists)
   const dateEl = el("offerDate");
@@ -227,6 +270,9 @@ async function init() {
   wireOfferNumberControls();
 
   wireTermsUi();
+
+  // [invoiceDays] wire manual input (1–60)
+  wireInvoiceDaysInput();
 
   // Render items with callbacks
   renderItems({
@@ -260,96 +306,92 @@ async function init() {
     const payload = await bootLastOrCreateNew(deps);
     if (el("offerNumberPreview")) el("offerNumberPreview").textContent = payload?.meta?.offerNo || "—";
 
-    
-const offersCtl = initOffersSubpage({
-  onBack: () => showPage("mainPage"),
+    const offersCtl = initOffersSubpage({
+      onBack: () => showPage("mainPage"),
 
-	onNewOffer: async () => {
-	  const p = await createNewOffer(deps);
-	  setActiveOffer(p);
+      onNewOffer: async () => {
+        const p = await createNewOffer(deps);
+        setActiveOffer(p);
 
-	  if (el("offerNumberPreview")) {
-		el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
-	  }
+        if (el("offerNumberPreview")) {
+          el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
+        }
 
-	  showPage("mainPage");
+        showPage("mainPage");
 
-	  // WAŻNE: wyczyść klienta *po* przełączeniu widoku (żeby nic go nie nadpisało)
-	  queueMicrotask(() => {
-		clearCustomerFields();
-		scheduleAutosave(autosaveActiveOffer);
-	  });
-	},
+        // WAŻNE: wyczyść klienta *po* przełączeniu widoku (żeby nic go nie nadpisało)
+        queueMicrotask(() => {
+          clearCustomerFields();
+          scheduleAutosave(autosaveActiveOffer);
+        });
+      },
 
+      onOpenOfferLoaded: async (p) => {
+        setActiveOffer(p);
 
-  onOpenOfferLoaded: async (p) => {
-	  setActiveOffer(p);
+        if (el("offerNumberPreview")) {
+          el("offerNumberPreview").textContent =
+            p?.meta?.offerNo || p?.offerNo || "—";
+        }
 
-	  if (el("offerNumberPreview")) {
-		el("offerNumberPreview").textContent =
-		  p?.meta?.offerNo || p?.offerNo || "—";
-	  }
-
-	  // APPLY FIELDS (żeby klient i reszta pól nie zostawały z poprzedniej oferty)
-	  const fields = p?.fields || {};
-	  ["custName", "custNip", "custAddr", "custContact"].forEach((id) => {
-		  const node = formEl(id);
-		  if (node) node.value = "";
-		});
-
-	  Object.keys(fields).forEach((id) => {
-		const node = formEl(id);
-		if (!node) return;
-
-		const val = fields[id];
-		if (node.type === "checkbox") node.checked = !!val;
-		else node.value = val ?? "";
-	  });
-
-	  setItems((p.items || []).map(normalizeItem));
-	  deps.renderItems();
-	  recalcTotalsUI();
-
-	  document.getElementById("paymentMethod")
-		?.dispatchEvent(new Event("change"));
-	  document.getElementById("shippingNet")
-		?.dispatchEvent(new Event("input"));
-
-	  scheduleAutosave(autosaveActiveOffer);
-	  showPage("mainPage");
-  }
-});
-
-
-        el("btnOffers")?.addEventListener("click", async () => {
-          showPage("offersPage");
-          await offersCtl.refresh();
+        // APPLY FIELDS (żeby klient i reszta pól nie zostawały z poprzedniej oferty)
+        const fields = p?.fields || {};
+        ["custName", "custNip", "custAddr", "custContact"].forEach((id) => {
+          const node = formEl(id);
+          if (node) node.value = "";
         });
 
+        Object.keys(fields).forEach((id) => {
+          const node = formEl(id);
+          if (!node) return;
 
-    
+          const val = fields[id];
+          if (node.type === "checkbox") node.checked = !!val;
+          else node.value = val ?? "";
+        });
+
+        // [invoiceDays] normalize after applying fields
+        applyInvoiceDaysToFormValue(fields.invoiceDays);
+
+        setItems((p.items || []).map(normalizeItem));
+        deps.renderItems();
+        recalcTotalsUI();
+
+        document.getElementById("paymentMethod")
+          ?.dispatchEvent(new Event("change"));
+        document.getElementById("shippingNet")
+          ?.dispatchEvent(new Event("input"));
+
+        scheduleAutosave(autosaveActiveOffer);
+        showPage("mainPage");
+      }
+    });
+
+    el("btnOffers")?.addEventListener("click", async () => {
+      showPage("offersPage");
+      await offersCtl.refresh();
+    });
 
     // Start application at offers list
     showPage("offersPage");
     await offersCtl.refresh();
-	el("btnNewOffer")?.addEventListener("click", async () => {
-	  const p = await createNewOffer(deps);
-	  setActiveOffer(p);
 
-	  if (el("offerNumberPreview")) {
-		el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
-	  }
+    el("btnNewOffer")?.addEventListener("click", async () => {
+      const p = await createNewOffer(deps);
+      setActiveOffer(p);
 
-	  showPage("mainPage");
+      if (el("offerNumberPreview")) {
+        el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
+      }
 
-	  queueMicrotask(() => {
-		clearCustomerFields();
-		scheduleAutosave(autosaveActiveOffer);
-	  });
-	});
+      showPage("mainPage");
 
-	
-	
+      queueMicrotask(() => {
+        clearCustomerFields();
+        scheduleAutosave(autosaveActiveOffer);
+      });
+    });
+
   } else {
     // Browser mode
     loadStateFromStorage({
@@ -381,53 +423,51 @@ initAppVersion();
 
 // ===== Currency dropdown (PLN/USD/EUR) – UI only =====
 (function initCurrencyDropdown() {
-	let activePortal = null; // { menu, btn, wrap, placeholder }
+  let activePortal = null; // { menu, btn, wrap, placeholder }
 
-	function positionPortal(menu, btn) {
-	  const r = btn.getBoundingClientRect();
-	  const gap = 6;
+  function positionPortal(menu, btn) {
+    const r = btn.getBoundingClientRect();
+    const gap = 6;
 
-	  // prawa krawędź menu równo z prawą krawędzią przycisku
-	  const menuWidth = menu.getBoundingClientRect().width || 120;
-	  const left = Math.max(8, Math.min(window.innerWidth - menuWidth - 8, r.right - menuWidth));
-	  const top = Math.min(window.innerHeight - 8, r.bottom + gap);
+    // prawa krawędź menu równo z prawą krawędzią przycisku
+    const menuWidth = menu.getBoundingClientRect().width || 120;
+    const left = Math.max(8, Math.min(window.innerWidth - menuWidth - 8, r.right - menuWidth));
+    const top = Math.min(window.innerHeight - 8, r.bottom + gap);
 
-	  menu.style.left = `${left}px`;
-	  menu.style.top = `${top}px`;
-	}
-		
-	
-	function closeAllMenus() {
-	  // zamknij normalne
-	  document.querySelectorAll(".js-ccyMenu.is-open").forEach((m) => {
-		m.classList.remove("is-open");
-		m.setAttribute("aria-hidden", "true");
-		m.closest(".input-money")?.classList.remove("ccy-open");
-	  });
-	  document.querySelectorAll(".js-ccyBtn[aria-expanded='true']").forEach((b) => {
-		b.setAttribute("aria-expanded", "false");
-	  });
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  }
 
-	  // zamknij portal (jeśli aktywny)
-	  if (activePortal) {
-		const { menu, placeholder, wrap, btn } = activePortal;
+  function closeAllMenus() {
+    // zamknij normalne
+    document.querySelectorAll(".js-ccyMenu.is-open").forEach((m) => {
+      m.classList.remove("is-open");
+      m.setAttribute("aria-hidden", "true");
+      m.closest(".input-money")?.classList.remove("ccy-open");
+    });
+    document.querySelectorAll(".js-ccyBtn[aria-expanded='true']").forEach((b) => {
+      b.setAttribute("aria-expanded", "false");
+    });
 
-		menu.classList.remove("is-open");
-		menu.classList.remove("is-portal");
-		menu.setAttribute("aria-hidden", "true");
+    // zamknij portal (jeśli aktywny)
+    if (activePortal) {
+      const { menu, placeholder, wrap, btn } = activePortal;
 
-		// wróć menu na miejsce w DOM
-		if (placeholder && placeholder.parentNode) {
-		  placeholder.replaceWith(menu);
-		}
+      menu.classList.remove("is-open");
+      menu.classList.remove("is-portal");
+      menu.setAttribute("aria-hidden", "true");
 
-		wrap?.classList.remove("ccy-open");
-		btn?.setAttribute("aria-expanded", "false");
+      // wróć menu na miejsce w DOM
+      if (placeholder && placeholder.parentNode) {
+        placeholder.replaceWith(menu);
+      }
 
-		activePortal = null;
-	  }
-	}
+      wrap?.classList.remove("ccy-open");
+      btn?.setAttribute("aria-expanded", "false");
 
+      activePortal = null;
+    }
+  }
 
   document.addEventListener("click", (e) => {
     const btn = e.target.closest(".js-ccyBtn");
@@ -436,19 +476,16 @@ initAppVersion();
     // Klik w opcję waluty
     if (opt) {
       const wrap = opt.closest(".input-money");
-      const menu = wrap?.querySelector(".js-ccyMenu");
       const ccyBtn = wrap?.querySelector(".js-ccyBtn");
       const ccy = opt.getAttribute("data-ccy") || "PLN";
 
       if (ccyBtn) {
         ccyBtn.dataset.ccy = ccy;
-        // tekst na przycisku (z chevronem)
         const hasChevron = ccyBtn.querySelector("i");
         ccyBtn.textContent = ccy + " ";
         if (hasChevron) ccyBtn.appendChild(hasChevron);
       }
 
-      // Na razie nic więcej nie robimy (UI-only)
       closeAllMenus();
       e.preventDefault();
       return;
@@ -456,45 +493,46 @@ initAppVersion();
 
     // Klik w przycisk waluty – toggle menu
     if (btn) {
-	  const wrap = btn.closest(".input-money");
-	  const menu = wrap?.querySelector(".js-ccyMenu");
-	  if (!wrap || !menu) return;
+      const wrap = btn.closest(".input-money");
+      const menu = wrap?.querySelector(".js-ccyMenu");
+      if (!wrap || !menu) return;
 
-	  const isOpen = activePortal?.btn === btn; // ten sam dropdown otwarty?
-	  closeAllMenus();
+      const isOpen = activePortal?.btn === btn; // ten sam dropdown otwarty?
+      closeAllMenus();
 
-	  if (!isOpen) {
-		// portal: wstaw placeholder, przenieś menu do body
-		const placeholder = document.createElement("span");
-		placeholder.style.display = "none";
-		menu.before(placeholder);
+      if (!isOpen) {
+        // portal: wstaw placeholder, przenieś menu do body
+        const placeholder = document.createElement("span");
+        placeholder.style.display = "none";
+        menu.before(placeholder);
 
-		document.body.appendChild(menu);
-		menu.classList.add("is-portal");
-		menu.classList.add("is-open");
-		menu.setAttribute("aria-hidden", "false");
-		btn.setAttribute("aria-expanded", "true");
-		wrap.classList.add("ccy-open");
+        document.body.appendChild(menu);
+        menu.classList.add("is-portal");
+        menu.classList.add("is-open");
+        menu.setAttribute("aria-hidden", "false");
+        btn.setAttribute("aria-expanded", "true");
+        wrap.classList.add("ccy-open");
 
-		// pozycjonowanie po renderze
-		requestAnimationFrame(() => positionPortal(menu, btn));
+        // pozycjonowanie po renderze
+        requestAnimationFrame(() => positionPortal(menu, btn));
 
-		activePortal = { menu, btn, wrap, placeholder };
-	  }
+        activePortal = { menu, btn, wrap, placeholder };
+      }
 
-	  e.preventDefault();
-	  return;
-	}
+      e.preventDefault();
+      return;
+    }
 
-	window.addEventListener("scroll", () => {
-	  if (activePortal) positionPortal(activePortal.menu, activePortal.btn);
-	}, true); // true = łapie scroll na dowolnym kontenerze
-
-	window.addEventListener("resize", () => {
-	  if (activePortal) positionPortal(activePortal.menu, activePortal.btn);
-	});
     // Klik poza – zamknij
     closeAllMenus();
+
+    window.addEventListener("scroll", () => {
+      if (activePortal) positionPortal(activePortal.menu, activePortal.btn);
+    }, true); // true = łapie scroll na dowolnym kontenerze
+
+    window.addEventListener("resize", () => {
+      if (activePortal) positionPortal(activePortal.menu, activePortal.btn);
+    });
   });
 
   // ESC zamyka
@@ -502,6 +540,5 @@ initAppVersion();
     if (e.key === "Escape") closeAllMenus();
   });
 })();
-
 
 window.addEventListener("DOMContentLoaded", init);
