@@ -47,7 +47,10 @@ export function showToast(message, { type = "info", ms = 3000 } = {}) {
   toast.classList.add("is-show");
 
   clearTimer();
-  _timer = setTimeout(hideToast, ms);
+	  if (ms && ms > 0) {
+	  _timer = setTimeout(hideToast, ms);
+	}
+
 }
 
 /**
@@ -128,4 +131,60 @@ export function hideToast() {
   toast.classList.remove("is-show", "is-error");
 
   clearTimer();
+}
+
+export function updateToast(message) {
+  const toast = ensureToastEl();
+  const textEl = toast.querySelector(".appToastText");
+  if (textEl) textEl.textContent = String(message ?? "");
+}
+
+// === Progress toast API ===
+let _progress = { active: false };
+
+export function showToastProgress(title, { type = "info" } = {}) {
+  const toast = ensureToastEl();
+  const textEl = toast.querySelector(".appToastText");
+  const actions = toast.querySelector(".appToastActions");
+
+  toast.classList.toggle("is-error", type === "error");
+
+  // UI: title + progress
+  if (textEl) {
+    textEl.innerHTML = `
+      <div class="appToastTitle">${String(title ?? "")}</div>
+      <div class="appToastProgressRow">
+        <div class="appToastProgressBar"><div class="appToastProgressFill" style="width:0%"></div></div>
+        <div class="appToastProgressPct">0%</div>
+      </div>
+    `;
+  }
+  if (actions) actions.innerHTML = ""; // bez akcji w trakcie pobierania
+
+  toast.style.display = "flex";
+  toast.classList.remove("is-show");
+  void toast.offsetWidth;
+  toast.classList.add("is-show");
+
+  // IMPORTANT: progress toast nie znika sam
+  if (_timer) {
+    clearTimeout(_timer);
+    _timer = null;
+  }
+  _progress.active = true;
+}
+
+export function updateToastProgress(percent) {
+  if (!_progress.active) return;
+  const toast = ensureToastEl();
+  const fill = toast.querySelector(".appToastProgressFill");
+  const pctEl = toast.querySelector(".appToastProgressPct");
+
+  const p = Math.max(0, Math.min(100, Math.round(Number(percent || 0))));
+  if (fill) fill.style.width = `${p}%`;
+  if (pctEl) pctEl.textContent = `${p}%`;
+}
+
+export function endToastProgress() {
+  _progress.active = false;
 }

@@ -13,7 +13,8 @@ import { renderItems } from "./ui/itemsTable.js";
 import { clearSavedState, loadStateFromStorage } from "./state/persistence.js";
 import { generatePdf } from "./export/pdf.js";
 import { initExcelExport } from "./export/excel.js";
-import { showToast, showToastAction } from "./ui/toast.js";
+import { showToast, showToastAction, showToastProgress, updateToastProgress, endToastProgress } from "./ui/toast.js";
+
 
 
 
@@ -442,30 +443,57 @@ initAppVersion();
 function initUpdateToasts() {
   if (!window.esusAPI?.onUpdateAvailable) return;
 
+  let downloading = false;
+  let lastPct = -1;
+
   window.esusAPI.onUpdateAvailable((d) => {
     const v = d?.version ? ` v${d.version}` : "";
     showToastAction(`Dostępna aktualizacja${v}.`, {
       type: "info",
-      ms: 12000,
+      ms: 15000,
       actionLabel: "Pobierz",
       secondaryLabel: "Później",
       onSecondary: async () => {},
+
       onAction: async () => {
         try {
+          downloading = true;
+          lastPct = -1;
+
+          showToastProgress("Pobieranie aktualizacji…");
+
           await window.esusAPI.updateDownload();
-          showToast("Pobieranie aktualizacji…", { type: "info", ms: 2500 });
+          // UWAGA: dalej czekamy na event update-downloaded
         } catch (e) {
-          showToast("Nie udało się pobrać aktualizacji.", { type: "error", ms: 3500 });
+          downloading = false;
+          endToastProgress();
+          showToast("Nie udało się pobrać aktualizacji.", { type: "error", ms: 4500 });
         }
       },
     });
   });
 
+  window.esusAPI.onUpdateProgress?.((p) => {
+    if (!downloading) return;
+
+    const pct = Number(p?.percent ?? 0);
+    if (!Number.isFinite(pct)) return;
+
+    const rounded = Math.max(0, Math.min(100, Math.round(pct)));
+    if (rounded === lastPct) return;
+    lastPct = rounded;
+
+    updateToastProgress(rounded);
+  });
+
   window.esusAPI.onUpdateDownloaded((d) => {
+    downloading = false;
+    endToastProgress();
+
     const v = d?.version ? ` v${d.version}` : "";
     showToastAction(`Aktualizacja${v} pobrana.`, {
       type: "info",
-      ms: 15000,
+      ms: 0, // <- nie znika samo, user ma kliknąć restart
       actionLabel: "Uruchom ponownie",
       secondaryLabel: "Później",
       onSecondary: async () => {},
@@ -476,18 +504,14 @@ function initUpdateToasts() {
   });
 
   window.esusAPI.onUpdateError((d) => {
+    downloading = false;
+    endToastProgress();
     console.warn("Updater error:", d);
-    showToast("Błąd aktualizacji (szczegóły w konsoli).", { type: "error", ms: 4000 });
-  });
-
-  // opcjonalnie: pasek procentów jako zwykły toast
-  window.esusAPI.onUpdateProgress?.((p) => {
-    const pct = Number(p?.percent ?? 0);
-    if (Number.isFinite(pct) && pct > 0 && pct < 100) {
-      showToast(`Pobieranie aktualizacji… ${pct}%`, { type: "info", ms: 1200 });
-    }
+    showToast("Błąd aktualizacji (szczegóły w konsoli).", { type: "error", ms: 5000 });
   });
 }
+
+
 
 initUpdateToasts();
 
