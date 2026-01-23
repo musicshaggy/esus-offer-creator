@@ -13,7 +13,7 @@ import { renderItems } from "./ui/itemsTable.js";
 import { clearSavedState, loadStateFromStorage } from "./state/persistence.js";
 import { generatePdf } from "./export/pdf.js";
 import { initExcelExport } from "./export/excel.js";
-import { showToast } from "./ui/toast.js";
+import { showToast, showToastAction } from "./ui/toast.js";
 
 
 
@@ -439,6 +439,57 @@ async function initAppVersion() {
 
 initAppVersion();
 
+function initUpdateToasts() {
+  if (!window.esusAPI?.onUpdateAvailable) return;
+
+  window.esusAPI.onUpdateAvailable((d) => {
+    const v = d?.version ? ` v${d.version}` : "";
+    showToastAction(`Dostępna aktualizacja${v}.`, {
+      type: "info",
+      ms: 12000,
+      actionLabel: "Pobierz",
+      secondaryLabel: "Później",
+      onSecondary: async () => {},
+      onAction: async () => {
+        try {
+          await window.esusAPI.updateDownload();
+          showToast("Pobieranie aktualizacji…", { type: "info", ms: 2500 });
+        } catch (e) {
+          showToast("Nie udało się pobrać aktualizacji.", { type: "error", ms: 3500 });
+        }
+      },
+    });
+  });
+
+  window.esusAPI.onUpdateDownloaded((d) => {
+    const v = d?.version ? ` v${d.version}` : "";
+    showToastAction(`Aktualizacja${v} pobrana.`, {
+      type: "info",
+      ms: 15000,
+      actionLabel: "Uruchom ponownie",
+      secondaryLabel: "Później",
+      onSecondary: async () => {},
+      onAction: async () => {
+        await window.esusAPI.updateQuitAndInstall();
+      },
+    });
+  });
+
+  window.esusAPI.onUpdateError((d) => {
+    console.warn("Updater error:", d);
+    showToast("Błąd aktualizacji (szczegóły w konsoli).", { type: "error", ms: 4000 });
+  });
+
+  // opcjonalnie: pasek procentów jako zwykły toast
+  window.esusAPI.onUpdateProgress?.((p) => {
+    const pct = Number(p?.percent ?? 0);
+    if (Number.isFinite(pct) && pct > 0 && pct < 100) {
+      showToast(`Pobieranie aktualizacji… ${pct}%`, { type: "info", ms: 1200 });
+    }
+  });
+}
+
+initUpdateToasts();
 
 // ===== Currency dropdown (PLN/USD/EUR) – UI only =====
 (function initCurrencyDropdown() {
