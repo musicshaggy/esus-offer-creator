@@ -439,34 +439,56 @@ ipcMain.handle("window:isMaximized", (evt) => {
 });
 
 function initAutoUpdater(win) {
-  autoUpdater.autoDownload = false; // kontrolujemy UX
+  // --- konfiguracja ---
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
 
+  // --- stan updatera (ważne dla UI) ---
+  let updState = {
+    available: null,   // { version }
+    downloaded: null,  // { version }
+    error: null
+  };
+
+  // --- EVENTS ---
   autoUpdater.on("update-available", (info) => {
-    win.webContents.send("upd:update-available", { version: info?.version });
-  });
-
-  autoUpdater.on("update-not-available", () => {
-    // opcjonalnie: nic nie rób
+    updState.available = { version: info?.version };
+    win.webContents.send("upd:update-available", updState.available);
   });
 
   autoUpdater.on("download-progress", (p) => {
-    // opcjonalnie: procenty
     win.webContents.send("upd:download-progress", {
       percent: Math.round(p?.percent ?? 0),
     });
   });
 
   autoUpdater.on("update-downloaded", (info) => {
-    win.webContents.send("upd:update-downloaded", { version: info?.version });
+    updState.downloaded = { version: info?.version };
+    win.webContents.send("upd:update-downloaded", updState.downloaded);
   });
 
   autoUpdater.on("error", (err) => {
-    win.webContents.send("upd:update-error", { message: String(err?.message || err) });
+    updState.error = { message: String(err?.message || err) };
+    win.webContents.send("upd:update-error", updState.error);
   });
 
-  // sprawdź na starcie
+  // 🔑 KLUCZ: jeśli event wpadł zanim renderer wstał → wyślij jeszcze raz
+  win.webContents.on("did-finish-load", () => {
+    if (updState.available) {
+      win.webContents.send("upd:update-available", updState.available);
+    }
+    if (updState.downloaded) {
+      win.webContents.send("upd:update-downloaded", updState.downloaded);
+    }
+    if (updState.error) {
+      win.webContents.send("upd:update-error", updState.error);
+    }
+  });
+
+  // --- start ---
   autoUpdater.checkForUpdates();
 }
+
 
 // IPC: kliknięcia z renderera
 ipcMain.handle("upd:download", async () => {
