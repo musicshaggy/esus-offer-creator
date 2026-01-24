@@ -33,6 +33,7 @@ import {
 } from "./offers/offersController.js";
 
 let cameFromMainPage = false;
+let currentOfferId = null; // ID aktualnie otwartej oferty w formularzu
 
 function showPage(pageId) {
   const mainPage = document.getElementById("mainPage");
@@ -60,7 +61,9 @@ function showPage(pageId) {
   }
   if (btnBack) {
     btnBack.style.display =
-      pageId === "offersPage" && cameFromMainPage ? "inline-flex" : "none";
+      pageId === "offersPage" && cameFromMainPage && !!currentOfferId
+        ? "inline-flex"
+        : "none";
   }
 }
 
@@ -319,6 +322,7 @@ async function init() {
         const p = await createNewOffer(deps);
         setActiveOffer(p);
 
+    currentOfferId = p?.id || null;
         if (el("offerNumberPreview")) {
           el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
         }
@@ -335,6 +339,7 @@ async function init() {
       onOpenOfferLoaded: async (p) => {
         setActiveOffer(p);
 
+    currentOfferId = p?.id || null;
         if (el("offerNumberPreview")) {
           el("offerNumberPreview").textContent =
             p?.meta?.offerNo || p?.offerNo || "—";
@@ -386,6 +391,7 @@ async function init() {
       const p = await createNewOffer(deps);
       setActiveOffer(p);
 
+  currentOfferId = p?.id || null;
       if (el("offerNumberPreview")) {
         el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
       }
@@ -508,6 +514,21 @@ function initUpdateToasts() {
     }
   }).catch(() => {});
 }
+
+
+// Jeśli usunięto ofertę, którą mamy "w pamięci" do powrotu, ukryj przycisk Powrót
+window.addEventListener("esus:offerDeleted", (ev) => {
+  const deletedId = ev?.detail?.id || null;
+  if (!deletedId) return;
+
+  if (currentOfferId && deletedId === currentOfferId) {
+    currentOfferId = null;
+    cameFromMainPage = false;
+
+    const btnBack = document.getElementById("btnOffersBack");
+    if (btnBack) btnBack.style.display = "none";
+  }
+});
 
 initUpdateToasts();
 
