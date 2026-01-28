@@ -27,14 +27,19 @@ contextBridge.exposeInMainWorld("esusAPI", {
   fileLoadJson: () => ipcRenderer.invoke("file:loadJson"),
   exportExcel: (args) => ipcRenderer.invoke("export:excel", args),
   getAppVersion: () => ipcRenderer.invoke("app:getVersion"),
-  getNextOfferSeq: (initials, year, month) => ipcRenderer.invoke("offers:nextSeq", { initials, year, month }),
+
+  // Offer sequencing (gap-filling)
+  getNextOfferSeq: (initials, year, month) =>
+    ipcRenderer.invoke("offers:nextSeq", { initials, year, month }),
+
+  // Auto-update (electron-updater)
   updateDownload: () => ipcRenderer.invoke("upd:download"),
-	updateQuitAndInstall: () => ipcRenderer.invoke("upd:quitAndInstall"),
+  updateQuitAndInstall: () => ipcRenderer.invoke("upd:quitAndInstall"),
+  updateGetStatus: () => ipcRenderer.invoke("upd:getStatus"),
 
-	onUpdateAvailable: (cb) => ipcRenderer.on("upd:update-available", (_e, data) => cb(data)),
-	onUpdateDownloaded: (cb) => ipcRenderer.on("upd:update-downloaded", (_e, data) => cb(data)),
-	onUpdateError: (cb) => ipcRenderer.on("upd:update-error", (_e, data) => cb(data)),
-	onUpdateProgress: (cb) => ipcRenderer.on("upd:download-progress", (_e, data) => cb(data))
+  onUpdateAvailable: (cb) => ipcRenderer.on("upd:update-available", (_e, d) => cb(d)),
+  onUpdateProgress: (cb) => ipcRenderer.on("upd:download-progress", (_e, d) => cb(d)),
+  onUpdateDownloaded: (cb) => ipcRenderer.on("upd:update-downloaded", (_e, d) => cb(d)),
+  onUpdateError: (cb) => ipcRenderer.on("upd:update-error", (_e, d) => cb(d)),
 });
-
 

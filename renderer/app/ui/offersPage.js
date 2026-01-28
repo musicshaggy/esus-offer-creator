@@ -3,6 +3,7 @@ import { VAT_RATE } from "../config/constants.js";
 import { itemNetAfterDiscount } from "../calc/pricing.js";
 import { showToast, showToastAction } from "../ui/toast.js";
 
+
 function pickOfferNo(row) {
   return (
     row?.meta?.offerNo ||
@@ -109,6 +110,7 @@ function cloneTopbarHeader() {
   offersPage.prepend(wrap);
 }
 
+
 function qs(id) { return document.getElementById(id); }
 
 function setCount(n) { qs("offersCount").textContent = String(n); }
@@ -209,8 +211,7 @@ async function enrichOffers(list) {
         } else {
           if (grossSaved != null) r.gross = grossSaved;
           if (netSaved != null) r.net = netSaved;
-        }
-        // offerNo
+        }// offerNo
         r.offerNo = r.offerNo && r.offerNo !== "—" ? r.offerNo : (p?.meta?.offerNo || p?.offerNo || r.offerNo);
         // updatedAt
         r.updatedAt = r.updatedAt || p?.meta?.updatedAt || p?.meta?.createdAt || "";
@@ -237,6 +238,7 @@ async function loadOffers() {
   // uzupełnij klienta i kwoty (brutto/netto) na podstawie pełnego payloadu
   return await enrichOffers(list);
 }
+
 
 export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}) {
   const searchEl = qs("offersSearch");
@@ -266,10 +268,6 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
     renderRows(rows, {
       onOpen: async (row, rowId) => {
         const id = rowId || row?.id || row?.key || row?.offerId;
-        if (!id) {
-          showToast("Nie udało się otworzyć oferty (brak ID).", { type: "error", ms: 3500 });
-          return;
-        }
         try {
           const offer = await offersOpen(id);
           await onOpenOfferLoaded?.(offer);
@@ -279,7 +277,6 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
           showToast("Nie udało się otworzyć oferty. Sprawdź konsolę.", { type: "error", ms: 3500 });
         }
       },
-
       onDuplicate: async (row, rowId) => {
         const id = rowId || row?.id || row?.key || row?.offerId;
         if (!id) {
@@ -295,7 +292,6 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
           showToast("Nie udało się zduplikować oferty. Sprawdź konsolę.", { type: "error", ms: 3500 });
         }
       },
-
       onDelete: async (row, rowId) => {
         const id = rowId || row?.id || row?.key || row?.offerId;
         const no = pickOfferNo(row);
@@ -305,7 +301,6 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
           return;
         }
 
-        // ✅ ZAMIANA confirm() -> toastAction (bez psucia focusu)
         showToastAction(`Usunąć ofertę ${no}?`, {
           type: "error",
           ms: 8000,
@@ -316,7 +311,10 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
           onAction: async () => {
             try {
               await window.esusAPI.offersDelete(id);
-			  window.dispatchEvent(new CustomEvent("esus:offerDeleted", { detail: { id } }));
+
+              // Powiadom główny widok, że usunięto ofertę (żeby ukryć "Powrót" jeśli trzeba)
+              window.dispatchEvent(new CustomEvent("esus:offerDeleted", { detail: { id } }));
+
               await refresh();
               showToast("Oferta usunięta.", { type: "info", ms: 2500 });
             } catch (e) {

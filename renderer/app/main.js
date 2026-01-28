@@ -13,7 +13,13 @@ import { renderItems } from "./ui/itemsTable.js";
 import { clearSavedState, loadStateFromStorage } from "./state/persistence.js";
 import { generatePdf } from "./export/pdf.js";
 import { initExcelExport } from "./export/excel.js";
-import { showToast, showToastAction } from "./ui/toast.js";
+import {
+  showToast,
+  showToastAction,
+  showToastProgress,
+  updateToastProgress,
+  endToastProgress,
+} from "./ui/toast.js";
 
 
 
@@ -27,7 +33,7 @@ import {
 } from "./offers/offersController.js";
 
 let cameFromMainPage = false;
-let currentOfferId = null;
+let currentOfferId = null; // ID aktualnie otwartej oferty w formularzu
 
 function showPage(pageId) {
   const mainPage = document.getElementById("mainPage");
@@ -53,12 +59,12 @@ function showPage(pageId) {
   if (headerTitle) {
     headerTitle.textContent = pageId === "offersPage" ? "Oferty" : "Generator wyceny (PDF)";
   }
-	if (btnBack) {
-	  btnBack.style.display =
-		pageId === "offersPage" && cameFromMainPage && !!currentOfferId
-		  ? "inline-flex"
-		  : "none";
-	}
+  if (btnBack) {
+    btnBack.style.display =
+      pageId === "offersPage" && cameFromMainPage && !!currentOfferId
+        ? "inline-flex"
+        : "none";
+  }
 }
 
 
@@ -315,8 +321,8 @@ async function init() {
       onNewOffer: async () => {
         const p = await createNewOffer(deps);
         setActiveOffer(p);
-		currentOfferId = p?.id || null;
 
+    currentOfferId = p?.id || null;
         if (el("offerNumberPreview")) {
           el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
         }
@@ -332,8 +338,8 @@ async function init() {
 
       onOpenOfferLoaded: async (p) => {
         setActiveOffer(p);
-		currentOfferId = p?.id || null;
 
+    currentOfferId = p?.id || null;
         if (el("offerNumberPreview")) {
           el("offerNumberPreview").textContent =
             p?.meta?.offerNo || p?.offerNo || "—";
@@ -384,8 +390,8 @@ async function init() {
     el("btnNewOffer")?.addEventListener("click", async () => {
       const p = await createNewOffer(deps);
       setActiveOffer(p);
-	  currentOfferId = p?.id || null;
 
+  currentOfferId = p?.id || null;
       if (el("offerNumberPreview")) {
         el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
       }
@@ -410,19 +416,6 @@ async function init() {
       },
     });
   }
-  window.addEventListener("esus:offerDeleted", (ev) => {
-  const deletedId = ev?.detail?.id || null;
-  if (!deletedId) return;
-
-  if (currentOfferId && deletedId === currentOfferId) {
-    // Usunięto ofertę, do której mieliśmy wrócić -> nie ma już "Powrót"
-    currentOfferId = null;
-    cameFromMainPage = false;
-
-    const btnBack = document.getElementById("btnOffersBack");
-    if (btnBack) btnBack.style.display = "none";
-  }
-});
 }
 
 async function initAppVersion() {
@@ -439,33 +432,57 @@ async function initAppVersion() {
 
 initAppVersion();
 
+// ===== Auto-update toasts (electron-updater) =====
 function initUpdateToasts() {
   if (!window.esusAPI?.onUpdateAvailable) return;
+
+  let downloading = false;
+  let lastPct = -1;
 
   window.esusAPI.onUpdateAvailable((d) => {
     const v = d?.version ? ` v${d.version}` : "";
     showToastAction(`Dostępna aktualizacja${v}.`, {
       type: "info",
-      ms: 12000,
+      ms: 15000,
       actionLabel: "Pobierz",
       secondaryLabel: "Później",
       onSecondary: async () => {},
+      keepOpenOnAction: true,
       onAction: async () => {
         try {
+          downloading = true;
+          lastPct = -1;
+          showToastProgress("Pobieranie aktualizacji…");
           await window.esusAPI.updateDownload();
-          showToast("Pobieranie aktualizacji…", { type: "info", ms: 2500 });
+          // UI przejdzie do "Uruchom ponownie" po evencie update-downloaded
         } catch (e) {
-          showToast("Nie udało się pobrać aktualizacji.", { type: "error", ms: 3500 });
+          downloading = false;
+          endToastProgress();
+          console.warn(e);
+          showToast("Nie udało się pobrać aktualizacji.", { type: "error", ms: 4500 });
         }
       },
     });
   });
 
+  window.esusAPI.onUpdateProgress?.((p) => {
+    if (!downloading) return;
+    const pct = Number(p?.percent ?? 0);
+    if (!Number.isFinite(pct)) return;
+    const rounded = Math.max(0, Math.min(100, Math.round(pct)));
+    if (rounded === lastPct) return;
+    lastPct = rounded;
+    updateToastProgress(rounded);
+  });
+
   window.esusAPI.onUpdateDownloaded((d) => {
+    downloading = false;
+    endToastProgress();
+
     const v = d?.version ? ` v${d.version}` : "";
     showToastAction(`Aktualizacja${v} pobrana.`, {
       type: "info",
-      ms: 15000,
+      ms: 0,
       actionLabel: "Uruchom ponownie",
       secondaryLabel: "Później",
       onSecondary: async () => {},
@@ -476,20 +493,45 @@ function initUpdateToasts() {
   });
 
   window.esusAPI.onUpdateError((d) => {
+    downloading = false;
+    endToastProgress();
     console.warn("Updater error:", d);
-    showToast("Błąd aktualizacji (szczegóły w konsoli).", { type: "error", ms: 4000 });
+    showToast("Błąd aktualizacji (szczegóły w konsoli).", { type: "error", ms: 5000 });
   });
 
-  // opcjonalnie: pasek procentów jako zwykły toast
-  window.esusAPI.onUpdateProgress?.((p) => {
-    const pct = Number(p?.percent ?? 0);
-    if (Number.isFinite(pct) && pct > 0 && pct < 100) {
-      showToast(`Pobieranie aktualizacji… ${pct}%`, { type: "info", ms: 1200 });
+  // jeśli update był już pobrany zanim renderer wystartował – pokaż od razu
+  window.esusAPI.updateGetStatus?.().then((st) => {
+    if (st?.downloaded?.version) {
+      const v = ` v${st.downloaded.version}`;
+      showToastAction(`Aktualizacja${v} pobrana.`, {
+        type: "info",
+        ms: 0,
+        actionLabel: "Uruchom ponownie",
+        secondaryLabel: "Później",
+        onSecondary: async () => {},
+        onAction: async () => window.esusAPI.updateQuitAndInstall(),
+      });
     }
-  });
+  }).catch(() => {});
 }
 
+
+// Jeśli usunięto ofertę, którą mamy "w pamięci" do powrotu, ukryj przycisk Powrót
+window.addEventListener("esus:offerDeleted", (ev) => {
+  const deletedId = ev?.detail?.id || null;
+  if (!deletedId) return;
+
+  if (currentOfferId && deletedId === currentOfferId) {
+    currentOfferId = null;
+    cameFromMainPage = false;
+
+    const btnBack = document.getElementById("btnOffersBack");
+    if (btnBack) btnBack.style.display = "none";
+  }
+});
+
 initUpdateToasts();
+
 
 // ===== Currency dropdown (PLN/USD/EUR) – UI only =====
 (function initCurrencyDropdown() {

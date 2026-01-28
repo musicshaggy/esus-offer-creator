@@ -782,6 +782,60 @@
 	}
 
 	#appToast .appToastText{ flex: 1; }
+	#appToast .appToastBody{ flex: 1; min-width: 0; }
+	#appToast .appToastText{ line-height: 1.25; }
+
+	#appToast .appToastActions{
+	  display: inline-flex;
+	  gap: 8px;
+	  align-items: center;
+	}
+
+	#appToast .appToastBtn{
+	  height: 30px;
+	  padding: 0 10px;
+	  border-radius: 10px;
+	  border: 1px solid rgba(255,255,255,0.14);
+	  background: rgba(255,255,255,0.08);
+	  color: rgba(255,255,255,0.92);
+	  font-weight: 750;
+	  font-size: 12px;
+	  cursor: pointer;
+	}
+	#appToast .appToastBtn:hover{ filter: brightness(1.06); }
+	#appToast .appToastBtnPrimary{
+	  background: rgba(255,255,255,0.14);
+	  border-color: rgba(255,255,255,0.22);
+	}
+
+	#appToast .appToastProgress{
+	  margin-top: 8px;
+	  display: none;
+	  align-items: center;
+	  gap: 10px;
+	}
+	#appToast .appToastProgressBar{
+	  width: 220px;
+	  height: 8px;
+	  border-radius: 999px;
+	  background: rgba(255,255,255,0.10);
+	  border: 1px solid rgba(255,255,255,0.10);
+	  overflow: hidden;
+	}
+	#appToast .appToastProgressFill{
+	  height: 100%;
+	  width: 0%;
+	  background: rgba(255,255,255,0.55);
+	  border-radius: 999px;
+	  transition: width 120ms linear;
+	}
+	#appToast .appToastProgressPct{
+	  min-width: 34px;
+	  text-align: right;
+	  opacity: 0.85;
+	  font-weight: 750;
+	  font-size: 12px;
+	}
 
 	#appToast .appToastClose{
 	  appearance: none;
@@ -811,33 +865,7 @@
 	  from{ opacity:0; transform: translate(-50%, 6px); }
 	  to  { opacity:1; transform: translate(-50%, 0); }
 	}
-	#appToast .appToastActions{
-	  display: inline-flex;
-	  gap: 8px;
-	  align-items: center;
-	}
-
-	#appToast .appToastBtn{
-	  height: 30px;
-	  padding: 0 10px;
-	  border-radius: 10px;
-	  border: 1px solid rgba(255,255,255,0.14);
-	  background: rgba(255,255,255,0.08);
-	  color: rgba(255,255,255,0.92);
-	  font-weight: 750;
-	  font-size: 12px;
-	  cursor: pointer;
-	}
-
-	#appToast .appToastBtn:hover{
-	  filter: brightness(1.06);
-	}
-
-	#appToast .appToastBtnPrimary{
-	  background: rgba(255,255,255,0.14);
-	  border-color: rgba(255,255,255,0.22);
-	}
-
+	
   </style>
 </head>
 

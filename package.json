@@ -1,6 +1,6 @@
 {
   "name": "esus-quote-generator",
-  "version": "1.1.4",
+  "version": "1.2.5",
   "main": "main.js",
   "private": true,
   "scripts": {
@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.1.0",
-    "electron-updater": "^6.7.3"
+    "electron-updater": "^6.4.0"
   },
   "build": {
     "appId": "pl.esus.app",
@@ -29,11 +29,12 @@
     "win": {
       "icon": "build/favicon.ico"
     },
-    "publish": [
+	"publish": [
       {
         "provider": "github",
         "owner": "musicshaggy",
-        "repo": "esus-offer-creator"
+        "repo": "esus-offer-creator",
+        "releaseType": "release"
       }
     ]
   }

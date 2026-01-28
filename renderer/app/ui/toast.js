@@ -1,6 +1,12 @@
 // renderer/app/ui/toast.js
+// Unified toast system (replaces alert/confirm) with support for:
+// - info/error toasts
+// - action toasts (primary/secondary buttons)
+// - progress bar updates
+
 let _toastEl = null;
 let _timer = null;
+let _progressActive = false;
 
 function ensureToastEl() {
   if (_toastEl) return _toastEl;
@@ -11,13 +17,18 @@ function ensureToastEl() {
   el.style.display = "none";
 
   el.innerHTML = `
-    <span class="appToastText"></span>
+    <div class="appToastBody">
+      <div class="appToastText"></div>
+      <div class="appToastProgress" style="display:none;">
+        <div class="appToastProgressBar"><div class="appToastProgressFill" style="width:0%"></div></div>
+        <div class="appToastProgressPct">0%</div>
+      </div>
+    </div>
     <div class="appToastActions"></div>
     <button type="button" class="appToastClose" aria-label="Zamknij">×</button>
   `;
 
   document.body.appendChild(el);
-
   el.querySelector(".appToastClose")?.addEventListener("click", hideToast);
 
   _toastEl = el;
@@ -31,35 +42,41 @@ function clearTimer() {
   }
 }
 
+function restartAnim(toast) {
+  toast.classList.remove("is-show");
+  // restart animation
+  void toast.offsetWidth;
+  toast.classList.add("is-show");
+}
+
 export function showToast(message, { type = "info", ms = 3000 } = {}) {
   const toast = ensureToastEl();
   const textEl = toast.querySelector(".appToastText");
-  const actions = toast.querySelector(".appToastActions");
+  const actionsEl = toast.querySelector(".appToastActions");
+  const progEl = toast.querySelector(".appToastProgress");
+
+  _progressActive = false;
+  if (progEl) progEl.style.display = "none";
+  if (actionsEl) actionsEl.innerHTML = "";
 
   if (textEl) textEl.textContent = String(message ?? "");
-  if (actions) actions.innerHTML = ""; // brak akcji
 
   toast.classList.toggle("is-error", type === "error");
-
   toast.style.display = "flex";
-  toast.classList.remove("is-show");
-  void toast.offsetWidth;
-  toast.classList.add("is-show");
+  restartAnim(toast);
 
   clearTimer();
-  _timer = setTimeout(hideToast, ms);
+  if (ms && ms > 0) {
+    _timer = setTimeout(hideToast, ms);
+  }
 }
 
-/**
- * Toast z akcją (np. "Cofnij"). Nie blokuje UI.
- * actionLabel + onAction są opcjonalne (możesz zrobić tylko "OK").
- */
 export function showToastAction(
   message,
   {
     type = "info",
     ms = 6000,
-    actionLabel = "Cofnij",
+    actionLabel = null,
     onAction = null,
     secondaryLabel = null,
     onSecondary = null,
@@ -68,12 +85,18 @@ export function showToastAction(
 ) {
   const toast = ensureToastEl();
   const textEl = toast.querySelector(".appToastText");
-  const actions = toast.querySelector(".appToastActions");
+  const actionsEl = toast.querySelector(".appToastActions");
+  const progEl = toast.querySelector(".appToastProgress");
 
-  if (textEl) textEl.textContent = String(message ?? "");
+  _progressActive = false;
+  if (progEl) progEl.style.display = "none";
 
-  if (actions) {
-    actions.innerHTML = "";
+  if (textEl) {
+    textEl.textContent = String(message ?? "");
+  }
+
+  if (actionsEl) {
+    actionsEl.innerHTML = "";
 
     if (actionLabel && typeof onAction === "function") {
       const btn = document.createElement("button");
@@ -87,7 +110,7 @@ export function showToastAction(
           if (!keepOpenOnAction) hideToast();
         }
       });
-      actions.appendChild(btn);
+      actionsEl.appendChild(btn);
     }
 
     if (secondaryLabel && typeof onSecondary === "function") {
@@ -102,30 +125,71 @@ export function showToastAction(
           hideToast();
         }
       });
-      actions.appendChild(btn2);
+      actionsEl.appendChild(btn2);
     }
   }
 
   toast.classList.toggle("is-error", type === "error");
-
   toast.style.display = "flex";
-  toast.classList.remove("is-show");
-  void toast.offsetWidth;
-  toast.classList.add("is-show");
+  restartAnim(toast);
 
   clearTimer();
-  _timer = setTimeout(hideToast, ms);
+  if (ms && ms > 0) {
+    _timer = setTimeout(hideToast, ms);
+  }
+}
+
+export function showToastProgress(title, { type = "info" } = {}) {
+  const toast = ensureToastEl();
+  const textEl = toast.querySelector(".appToastText");
+  const actionsEl = toast.querySelector(".appToastActions");
+  const progEl = toast.querySelector(".appToastProgress");
+  const fill = toast.querySelector(".appToastProgressFill");
+  const pct = toast.querySelector(".appToastProgressPct");
+
+  if (actionsEl) actionsEl.innerHTML = "";
+  if (textEl) textEl.textContent = String(title ?? "");
+
+  if (progEl) progEl.style.display = "flex";
+  if (fill) fill.style.width = "0%";
+  if (pct) pct.textContent = "0%";
+
+  _progressActive = true;
+  toast.classList.toggle("is-error", type === "error");
+  toast.style.display = "flex";
+  restartAnim(toast);
+
+  clearTimer();
+}
+
+export function updateToastProgress(percent) {
+  if (!_progressActive) return;
+  const toast = ensureToastEl();
+  const fill = toast.querySelector(".appToastProgressFill");
+  const pct = toast.querySelector(".appToastProgressPct");
+  const p = Math.max(0, Math.min(100, Math.round(Number(percent ?? 0))));
+
+  if (fill) fill.style.width = `${p}%`;
+  if (pct) pct.textContent = `${p}%`;
+}
+
+export function endToastProgress() {
+  _progressActive = false;
 }
 
 export function hideToast() {
   const toast = _toastEl;
   if (!toast) return;
 
-  const actions = toast.querySelector(".appToastActions");
-  if (actions) actions.innerHTML = "";
+  const actionsEl = toast.querySelector(".appToastActions");
+  const progEl = toast.querySelector(".appToastProgress");
+
+  if (actionsEl) actionsEl.innerHTML = "";
+  if (progEl) progEl.style.display = "none";
 
   toast.style.display = "none";
   toast.classList.remove("is-show", "is-error");
 
+  _progressActive = false;
   clearTimer();
 }
