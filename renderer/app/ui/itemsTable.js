@@ -36,6 +36,12 @@ function clamp(n, a, b) {
   return Math.min(b, Math.max(a, n));
 }
 
+function clampInt(n, a, b) {
+  const v = parseInt(String(n ?? "").replace(/[^\d]/g, ""), 10);
+  if (!Number.isFinite(v)) return a;
+  return clamp(v, a, b);
+}
+
 function positionTipNearCursor(tip, ev) {
   const pad = 12;
   const rectW = tip.offsetWidth || 240;
@@ -83,6 +89,34 @@ function showDiscountTipForIndex(i, ev) {
   positionTipNearCursor(tip, ev);
 }
 
+let _warrantyToggleBound = false;
+
+function warrantyToggleHandler(e) {
+  const tbody = e.currentTarget;
+
+  const toggle = e.target.closest?.('[data-act="toggleWarranty"]');
+  if (!toggle || !tbody.contains(toggle)) return;
+
+  // 🔑 Ucina duplikaty handlerów (na tbody i innych listenerach na tym samym elemencie)
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+
+  const i = parseInt(toggle.getAttribute("data-i"), 10);
+  if (!Number.isFinite(i)) return;
+
+  const panel = tbody.querySelector(`.itemDetailsWarranty[data-warranty="${i}"]`);
+  if (!panel) return;
+
+  panel.hidden = !panel.hidden;
+
+  const caret = toggle.querySelector(".itemDetailsCaret");
+  const expanded = !panel.hidden;
+  if (caret) caret.textContent = expanded ? "∧" : "∨";
+  toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+}
+
+
 export function updateRowCalcUI(tr, it) {
   if (!tr) return;
 
@@ -102,9 +136,27 @@ export function updateRowCalcUI(tr, it) {
 
 export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
   const tbody = el("itemsBody");
+	// ✅ bind TYLKO RAZ, w CAPTURE, żeby być "pierwszym" i uciąć pozostałe duble
+	if (!_warrantyToggleBound) {
+	  // usuń na wszelki wypadek (gdyby hot-reload / init było wielokrotnie)
+	  tbody.removeEventListener("click", warrantyToggleHandler, true);
+	  tbody.addEventListener("click", warrantyToggleHandler, true); // capture=true
+	  _warrantyToggleBound = true;
+	}
+
+
+
   tbody.innerHTML = "";
 
   store.items.forEach((it, idx) => {
+    // ensure warranty structure (backward compatible)
+    if (!it.warranty || typeof it.warranty !== "object") {
+      it.warranty = { months: 0, nbd: false };
+    } else {
+      it.warranty.months = Number(it.warranty.months || 0);
+      it.warranty.nbd = !!it.warranty.nbd;
+    }
+
     const qty = Math.max(1, parseInt(it.qty || 1, 10));
     const sellNetAfter = itemNetAfterDiscount(it);
     const buyNet = Math.max(0, toNumber(it.buyNet));
@@ -117,12 +169,58 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
     const marginText = marginLine.toLocaleString("pl-PL", { maximumFractionDigits: 2 }) + "%";
     const profitClass = profitLine < 0 ? "calcCell negative" : "calcCell";
 
+    const wMonths = Math.max(0, parseInt(it?.warranty?.months || 0, 10) || 0);
+    const wNbd = !!it?.warranty?.nbd;
+
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>
         <label class="mini">Opis pozycji</label>
-        <input class="descInput" data-k="desc" data-i="${idx}" placeholder="Np. Dell PowerEdge / RAM / SSD..." value="${escapeHtml(it.desc)}" />
+
+        <input class="descInput"
+          data-k="desc" data-i="${idx}"
+          placeholder="Np. Dell PowerEdge / RAM / SSD..."
+          value="${escapeHtml(it.desc)}" />
+
+        <!-- Szczegóły pozycji (bez nowej kolumny) -->
+		<span
+		  class="itemDetailsToggle"
+		  data-act="toggleWarranty"
+		  data-i="${idx}"
+		  aria-expanded="false"
+		  title="Pokaż/ukryj szczegóły"
+		  style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;opacity:.85;"
+		>
+		  <span class="itemDetailsCaret" aria-hidden="true">∨</span>
+		  <span>Szczegóły pozycji</span>
+		</span>
+
+
+		<div class="itemDetailsWarranty" data-warranty="${idx}" hidden
+			 style="margin-top:6px; gap:14px; align-items:center; flex-wrap:wrap; opacity:.92;">
+
+            <label class="mini" style="display:flex; gap:8px; align-items:center; margin:0;">
+              Gwarancja
+              <input
+                data-k="warrantyMonths"
+                data-i="${idx}"
+                type="number"
+                min="0"
+                max="120"
+                step="1"
+                value="${wMonths}"
+                style="width:80px;"
+              />
+              miesięcy
+            </label>
+			<label class="mini" style="display:flex; gap:8px; align-items:center; margin:0;">
+              <input type="checkbox" data-k="warrantyNbd" data-i="${idx}" ${wNbd ? "checked" : ""} />
+              NBD
+            </label>
+          </div>
+        </div>
       </td>
+
       <td>
         <label class="mini">Zakup NETTO</label>
 
@@ -180,15 +278,30 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
     tbody.appendChild(tr);
   });
 
+  // ===== Inputs: zapis do store =====
+  // (robimy input + change, bo checkboxy wolą change)
   tbody.querySelectorAll("input").forEach((ctrl) => {
-    ctrl.addEventListener("input", (e) => {
+    const handler = (e) => {
       const i = parseInt(e.target.getAttribute("data-i"), 10);
       const k = e.target.getAttribute("data-k");
       if (!Number.isFinite(i) || !k) return;
 
-      if (k === "qty") updateItem(i, { [k]: Math.max(1, parseInt(e.target.value || "1", 10)) });
-      else if (k === "desc") updateItem(i, { [k]: e.target.value });
-      else updateItem(i, { [k]: toNumber(e.target.value) });
+      // warranty fields (nested object)
+      if (k === "warrantyMonths") {
+        const current = store.items[i]?.warranty || { months: 0, nbd: false };
+        const months = clampInt(e.target.value, 0, 120);
+        updateItem(i, { warranty: { ...current, months } });
+      } else if (k === "warrantyNbd") {
+        const current = store.items[i]?.warranty || { months: 0, nbd: false };
+        const nbd = !!e.target.checked;
+        updateItem(i, { warranty: { ...current, nbd } });
+      } else if (k === "qty") {
+        updateItem(i, { [k]: Math.max(1, parseInt(e.target.value || "1", 10)) });
+      } else if (k === "desc") {
+        updateItem(i, { [k]: e.target.value });
+      } else {
+        updateItem(i, { [k]: toNumber(e.target.value) });
+      }
 
       onTotalsChanged?.();
       updateRowCalcUI(e.target.closest("tr"), store.items[i]);
@@ -196,17 +309,21 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
 
       // jeśli tooltip jest aktywny na rabacie, aktualizuj treść w locie
       if (_discTipActive && _discTipActive.getAttribute("data-i") === String(i)) {
-        const fakeEv = e; // e ma clientX/Y tylko przy myszce; jeśli brak, zostaw pozycję
+        const fakeEv = e;
         try {
-          // jeśli event nie ma clientX/Y (np. klawiatura), nie ruszaj pozycji
           if (typeof fakeEv.clientX === "number") showDiscountTipForIndex(i, fakeEv);
           else showDiscountTipForIndex(i, { clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 });
         } catch {
           // no-op
         }
       }
-    });
+    };
+
+    ctrl.addEventListener("input", handler);
+    ctrl.addEventListener("change", handler);
   });
+
+
 
   // ===== Tooltip hover dla rabatu =====
   tbody.querySelectorAll('input[data-k="discount"]').forEach((inp) => {
@@ -227,6 +344,7 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
     });
   });
 
+  // ===== Delete =====
   tbody.querySelectorAll("[data-del]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const idx = parseInt(btn.getAttribute("data-del"), 10);
@@ -237,4 +355,6 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
       onStateChanged?.();
     });
   });
+  
+
 }
