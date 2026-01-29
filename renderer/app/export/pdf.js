@@ -5,7 +5,6 @@ import { itemNetAfterDiscount } from "../calc/pricing.js";
 import { buildOfferNumber } from "../ui/offerNumber.js";
 import { showToast } from "../ui/toast.js";
 
-
 async function arrayBufferToBase64(buffer) {
   let binary = "";
   const bytes = new Uint8Array(buffer);
@@ -75,11 +74,35 @@ function formatCreatorBlock() {
   return lines;
 }
 
+/* ===== Warranty helpers (PDF) ===== */
+function pluralizeMonthsPL(n) {
+  const x = Math.abs(Number(n) || 0);
+  const mod10 = x % 10;
+  const mod100 = x % 100;
+
+  if (x === 1) return "miesiąc";
+  if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) return "miesiące";
+  return "miesięcy";
+}
+
+function getWarrantyParts(it) {
+  const w = it?.warranty;
+  if (!w || typeof w !== "object") return null;
+
+  const months = Math.max(0, parseInt(w.months ?? 0, 10) || 0);
+  const nbd = !!w.nbd;
+
+  if (!(months > 0)) return null;
+
+  const monthsText = `${months} ${pluralizeMonthsPL(months)}`;
+  return { nbd, monthsText };
+}
+
 export async function generatePdf({ onBefore } = {}) {
   onBefore?.();
 
   if (store.items.length === 0) {
-    showToast("Dodaj przynajmniej jedną pozycję.", { type: "error", ms: 3500 } );
+    showToast("Dodaj przynajmniej jedną pozycję.", { type: "error", ms: 3500 });
     return;
   }
 
@@ -93,7 +116,8 @@ export async function generatePdf({ onBefore } = {}) {
   } catch (err) {
     console.error(err);
     showToast(
-      "Nie udało się załadować fontów do PDF (polskie znaki). PDF wygeneruje się czcionką domyślną.", { type: "error", ms: 3500 }
+      "Nie udało się załadować fontów do PDF (polskie znaki). PDF wygeneruje się czcionką domyślną.",
+      { type: "error", ms: 3500 }
     );
   }
   doc.setFont(fontName, "normal");
@@ -147,9 +171,6 @@ export async function generatePdf({ onBefore } = {}) {
   }
   if (logoData) doc.addImage(logoData, "PNG", margin, 10, 40, 12);
 
-  // Klient + Osoba (wyrównanie do tej samej wysokości)
-  // Ustal wspólny start Y dla bloków informacyjnych.
-  // Logo kończy się ok. na Y=22, więc 36mm daje bezpieczny odstęp.
   const infoTopY = 36;
 
   // Klient
@@ -184,12 +205,11 @@ export async function generatePdf({ onBefore } = {}) {
   });
   const creatorBlockBottomY = creatorY + 2;
 
-  // Header dokumentu (pod blokami Klient + Osoba)
+  // Header dokumentu
   const headerY = Math.max(clientBlockBottomY, creatorBlockBottomY) + 8;
 
   const offerNoFromUi = (document.getElementById("offerNumberPreview")?.textContent || "").trim();
-  const offerNo =
-    offerNoFromUi && offerNoFromUi !== "—" ? offerNoFromUi : buildOfferNumber();
+  const offerNo = offerNoFromUi && offerNoFromUi !== "—" ? offerNoFromUi : buildOfferNumber();
   const docLabel = isEstimate ? "Wycena szacunkowa" : "Oferta";
   doc.setFont(fontName, "bold");
   doc.setFontSize(16);
@@ -201,6 +221,7 @@ export async function generatePdf({ onBefore } = {}) {
   if (showDiscountCol) head.push("Rabat");
   head.push("Cena brutto", "Ilość", "Wartość brutto");
 
+  // Body: opis bez gwarancji w tekście, gwarancję dorysujemy hookiem z innym fontem
   const body = store.items.map((it, idx) => {
     const qty = Math.max(1, parseInt(it.qty || 1, 10));
     const disc = Math.min(100, Math.max(0, toNumber(it.discount)));
@@ -208,9 +229,17 @@ export async function generatePdf({ onBefore } = {}) {
     const grossUnit = netAfter * (1 + VAT_RATE);
     const grossLine = grossUnit * qty;
 
-    const row = [String(idx + 1), it.desc || "-", money(netAfter).replace(" zł", "")];
-    if (showDiscountCol)
-      row.push(`${disc.toLocaleString("pl-PL", { maximumFractionDigits: 2 })}%`);
+	const warranty = getWarrantyParts(it);
+
+	// ✅ jeśli jest gwarancja → dodaj pustą linię jako “rezerwa miejsca”
+	const descCell = warranty ? `${it.desc || "-"}\n\u200B` : (it.desc || "-");
+
+	const row = [String(idx + 1), descCell, money(netAfter).replace(" zł", "")];
+	row.__warranty = warranty;
+
+
+
+    if (showDiscountCol) row.push(`${disc.toLocaleString("pl-PL", { maximumFractionDigits: 2 })}%`);
     row.push(
       money(grossUnit).replace(" zł", ""),
       String(qty),
@@ -218,6 +247,10 @@ export async function generatePdf({ onBefore } = {}) {
     );
     return row;
   });
+
+  // bazowy font dla tabeli
+  const baseTableFont = 9;
+  const warrantyFont = Math.max(6, Math.round(baseTableFont * 0.8));
 
   doc.autoTable({
     startY: Math.max(creatorBlockBottomY, headerY + (isEstimate ? 8 : 6)),
@@ -230,8 +263,66 @@ export async function generatePdf({ onBefore } = {}) {
       font: fontName,
       fontStyle: "bold",
     },
-    styles: { font: fontName, fontStyle: "normal", fontSize: 9, cellPadding: 2.2 },
+    styles: { font: fontName, fontStyle: "normal", fontSize: baseTableFont, cellPadding: 2.2 },
     columnStyles: { 0: { cellWidth: 8 }, 1: { cellWidth: showDiscountCol ? 72 : 84 } },
+
+
+
+
+
+
+
+    // 2) Dorysuj linię gwarancji mniejszym fontem i z boldem na NBD + miesiące
+		didDrawCell: (data) => {
+	  if (data.section !== "body") return;
+	  if (data.column.index !== 1) return; // Opis
+
+	  const w = data.row?.raw?.__warranty;
+	  if (!w) return;
+
+	  const scale = doc.internal.scaleFactor || 2.83465;
+
+	  // autoTable już zawinęło opis + dodało pustą linię (placeholder)
+	  const lines = Array.isArray(data.cell.text) ? data.cell.text.length : 1;
+
+	  const baseLineH = (baseTableFont / scale) * 1.15;
+	  const warrantyLineH = (warrantyFont / scale) * 1.15;
+
+	  const x0 = data.cell.x + data.cell.padding("left");
+
+	  // ✅ rysujemy NA OSTATNIEJ LINII (tej pustej), nie “po tekście”
+	  let y =
+		data.cell.y +
+		data.cell.padding("top") +
+		(lines - 1) * baseLineH;
+
+	  // drobna korekta baseline dla mniejszego fontu
+	  y += (baseLineH - warrantyLineH) * 3;
+
+	  doc.setFontSize(warrantyFont);
+
+	  let x = x0;
+	  const write = (txt, bold) => {
+		doc.setFont(fontName, bold ? "bold" : "normal");
+		doc.text(txt, x, y);
+		x += doc.getTextWidth(txt);
+	  };
+
+	  write("Gwarancja ", false);
+	  if (w.nbd) write("NBD ", true);
+	  write(w.monthsText, true);
+
+	  doc.setFont(fontName, "normal");
+	  doc.setFontSize(baseTableFont);
+	},
+
+
+
+
+
+
+
+
   });
 
   const afterTableY = doc.lastAutoTable.finalY + 6;
@@ -261,16 +352,10 @@ export async function generatePdf({ onBefore } = {}) {
   doc.text(`Suma brutto: ${money(sumGross)}`, margin, sumBlockY + 10);
   doc.setFont(fontName, "normal");
   if (shipNet === 0)
-    doc.text("Dostawa: koszt po stronie sprzedawcy", pageW - margin, sumBlockY, {
-      align: "right",
-    });
+    doc.text("Dostawa: koszt po stronie sprzedawcy", pageW - margin, sumBlockY, { align: "right" });
   else {
-    doc.text(`Wysyłka netto: ${money(shipNet)}`, pageW - margin, sumBlockY, {
-      align: "right",
-    });
-    doc.text(`Wysyłka brutto: ${money(shipGross)}`, pageW - margin, sumBlockY + 5, {
-      align: "right",
-    });
+    doc.text(`Wysyłka netto: ${money(shipNet)}`, pageW - margin, sumBlockY, { align: "right" });
+    doc.text(`Wysyłka brutto: ${money(shipGross)}`, pageW - margin, sumBlockY + 5, { align: "right" });
   }
 
   // Linia
@@ -280,8 +365,6 @@ export async function generatePdf({ onBefore } = {}) {
   doc.line(margin, lineY, pageW - margin, lineY);
 
   // Warunki
-  // Terms section can be pushed below the reserved footer area if the table is long.
-  // Ensure we have enough space for at least a few lines + optional boxes.
   let termsY = lineY + 8;
   if (ensureSpace(45, termsY)) termsY = margin + 20;
   doc.setFont(fontName, "bold");
@@ -329,14 +412,11 @@ export async function generatePdf({ onBefore } = {}) {
     const boxX = margin;
     const boxW = pageW - margin * 2;
 
-    const title = "Dodatkowe ustalenia:";
+    const title = "Uwagi:";
     const wrapped = doc.splitTextToSize(extra, boxW - 10);
     const lines = wrapped.slice(0, 40);
 
-    const lineH = 4.2,
-      headerH = 6,
-      paddingTop = 5,
-      paddingBottom = 4;
+    const lineH = 4.2, headerH = 6, paddingTop = 5, paddingBottom = 4;
     let boxY = ty + 4;
     const boxH = paddingTop + headerH + lines.length * lineH + paddingBottom;
 
@@ -368,8 +448,7 @@ export async function generatePdf({ onBefore } = {}) {
     const boxW = pageW - margin * 2;
     let boxY = ty + 6;
 
-    const approxH =
-      14 + Math.min(7, doc.splitTextToSize(notes, pageW - margin * 2 - 10).length) * 4;
+    const approxH = 14 + Math.min(7, doc.splitTextToSize(notes, pageW - margin * 2 - 10).length) * 4;
     const moved = ensureSpace(approxH, boxY);
     if (moved) boxY = margin + 20;
 

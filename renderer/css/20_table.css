@@ -1,0 +1,157 @@
+/* Items */
+    .itemsHead{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px;}
+    .tableWrap{overflow:auto; border-radius:14px;}
+    table{
+      width:100%;
+      border-collapse: collapse;
+      border:1px solid var(--line);
+      border-radius: 14px;
+      overflow:hidden;
+      min-width: 980px;
+    }
+    thead th{
+      font-size:12px; color: var(--muted);
+      text-align:left; padding:10px;
+      border-bottom:1px solid var(--line);
+      background: rgba(255,255,255,.03);
+      vertical-align:bottom;
+    }
+    tbody td{padding:10px; border-bottom:1px solid rgba(255,255,255,.08); vertical-align:top;}
+    tbody tr:last-child td{border-bottom:none}
+    .mini{font-size:12px;color:var(--muted)}
+	td.profitCell,
+	td.td-actions {
+	  vertical-align: bottom;   /* klucz: wycentrowanie w pionie */
+	}
+
+
+	/* Akcje – bez flex na td, wystarczy na buttonie */
+	td.td-actions {
+	  width: 1%;
+	  white-space: nowrap;
+	}
+
+	td.td-actions > button {
+	  display: inline-flex;
+	  align-items: center;
+	  justify-content: center;
+	}
+
+    .btnTiny{padding:8px 10px; border-radius: 12px; font-weight:700;}
+    .descInput{min-width: 420px;}
+    @media (max-width: 900px){ .descInput{min-width: 260px;} }
+
+    .totals{display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:12px;}
+    .totals .box{
+      border:1px solid var(--line);
+      border-radius: 14px;
+      padding:12px;
+      background: rgba(255,255,255,.03);
+    }
+    .totals .box .k{font-size:12px;color:var(--muted)}
+    .totals .box .v{font-size:18px;font-weight:800;margin-top:6px}
+    .totals .grand{
+      grid-column: 1 / -1;
+      border-color: rgba(0,154,255,.45);
+      background: rgba(0,154,255,.08);
+    }
+
+    .note{
+      border-left: 4px solid var(--esus);
+      padding:10px 12px;
+      background: rgba(0,154,255,.08);
+      border-radius: 12px;
+      margin-top:10px;
+      color: var(--text);
+      font-size:13px;
+      line-height:1.4;
+    }
+
+    .toggleRow{
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.03);
+    }
+    .toggleRow input[type="checkbox"]{width:auto; transform:scale(1.15);}
+	/* Fix: dropdown list in dark UI (Chrome/Edge/Win) */
+	select {
+	  color: var(--text);
+	  background: rgba(0,0,0,.12);
+	}
+
+	select option {
+	  color: #e9eefc;
+	  background: #0f1a2e;  /* ciemne tło listy */
+	}
+	/* opcjonalnie: lepszy kontrast na focus */
+	select:focus {
+	  border-color: rgba(0,154,255,.75);
+	  box-shadow: 0 0 0 4px rgba(0,154,255,.12);
+	}
+	.sectionHeader{
+	  display:flex;
+	  align-items:center;
+	  justify-content:space-between;
+	  gap:10px;
+	  flex-wrap:wrap;
+	  margin-bottom:10px;
+	}
+	.sectionHeader .title{
+	  display:flex;
+	  align-items:center;
+	  gap:8px;
+	}
+
+	button:disabled{
+	  opacity:.45;
+	  cursor:not-allowed;
+	  transform:none !important;
+	  border-color: var(--line);
+	}
+	.calcCell{
+	  font-weight: 800;
+	  white-space: nowrap;
+	}
+	.calcCell.negative{
+	  color: var(--danger);
+	}
+	/* Kolumna Profit – wyrównanie w pionie do inputów */
+	td.profitCell {
+	  vertical-align: bottom;
+	}
+
+	/* Układ wewnętrzny */
+	td.profitCell .profitWrap {
+	  display: flex;
+	  flex-direction: column;
+	  align-items: flex-end;
+	  justify-content: flex-end; /* dół = linia inputów */
+	}
+
+	/* kosmetyka */
+	td.profitCell .js-profitValue,
+	td.profitCell .js-marginValue {
+	  margin: 0;
+	  line-height: 1.15;
+	}
+
+	td.profitCell .calcCell{
+	  line-height: 1.2;
+	}
+
+	td.profitCell .mini{
+	  margin-top: 2px;
+	  line-height: 1.1;
+	}
+
+/* ===== FIX: align delete button + profit vertically when row height changes ===== */
+td.td-actions,
+td.profitCell{
+  vertical-align: middle !important;
+}
+
+td.profitCell .profitWrap{
+  justify-content: center !important;
+}

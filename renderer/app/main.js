@@ -70,12 +70,18 @@ function showPage(pageId) {
 
 
 function normalizeItem(it = {}) {
+  const w = it?.warranty && typeof it.warranty === "object" ? it.warranty : {};
+  const months = Math.max(0, parseInt(w.months ?? 0, 10) || 0);
+  const nbd = !!w.nbd;
+
   return {
     desc: it.desc ?? "",
     net: Number(it.net ?? 0),
     buyNet: Number(it.buyNet ?? 0),
     discount: Number(it.discount ?? 0),
     qty: Math.max(1, parseInt(it.qty ?? 1, 10) || 1),
+
+    warranty: { months, nbd },
   };
 }
 
