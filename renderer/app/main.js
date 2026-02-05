@@ -446,6 +446,7 @@ function initUpdateToasts() {
   let lastPct = -1;
 
   window.esusAPI.onUpdateAvailable((d) => {
+	if (downloading) return;
     const v = d?.version ? ` v${d.version}` : "";
     showToastAction(`Dostępna aktualizacja${v}.`, {
       type: "info",
