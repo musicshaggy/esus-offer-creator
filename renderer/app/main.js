@@ -8,7 +8,7 @@ import { initWindowControls } from "./ui/windowControls.js";
 import { ensureUserProfile, applyProfileToForm } from "./ui/profileModal.js";
 import { refreshOfferPreview, loadUserInitialsAndSeq, persistInitials } from "./ui/offerNumber.js";
 import { initOffersSubpage } from "./ui/offersPage.js";
-import { renderItems } from "./ui/itemsTable.js";
+import { renderItems, recalcAllRowsUI  } from "./ui/itemsTable.js";
 
 import { clearSavedState, loadStateFromStorage } from "./state/persistence.js";
 import { generatePdf } from "./export/pdf.js";
@@ -21,6 +21,9 @@ import {
   endToastProgress,
 } from "./ui/toast.js";
 
+import { fetchExchangeRates, loadCachedExchangeRates } from "./utils/exchangeRates.js";
+import { setExchange } from "./state/store.js";
+
 
 
 import {
@@ -31,6 +34,22 @@ import {
   saveNow,
   setActiveOffer,
 } from "./offers/offersController.js";
+
+// 1) sync: z localStorage (żeby EUR/USD działało od razu po otwarciu oferty)
+setExchange(loadCachedExchangeRates());
+
+// 2) async: odśwież z NBP i po tym przelicz UI
+fetchExchangeRates().then((ex) => {
+  setExchange(ex);
+
+  // ważne: po aktualizacji kursów przelicz marże w widoku
+  // (najprościej: wywołać render items / recalc totals)
+  try {
+    // jeśli masz globalne deps/renderItems:
+        recalcAllRowsUI();
+		recalcTotalsUI?.();
+  } catch {}
+});
 
 let cameFromMainPage = false;
 let currentOfferId = null; // ID aktualnie otwartej oferty w formularzu
@@ -78,6 +97,7 @@ function normalizeItem(it = {}) {
     desc: it.desc ?? "",
     net: Number(it.net ?? 0),
     buyNet: Number(it.buyNet ?? 0),
+	buyCcy: String(it.buyCcy || "PLN").toUpperCase(),
     discount: Number(it.discount ?? 0),
     qty: Math.max(1, parseInt(it.qty ?? 1, 10) || 1),
 
@@ -295,7 +315,8 @@ async function init() {
     onStateChanged: () => scheduleAutosave(autosaveActiveOffer),
   });
   recalcTotalsUI();
-
+  recalcAllRowsUI();
+  
   wireAddItemButtons();
   wirePdfButton();
   initExcelExport({
@@ -314,6 +335,11 @@ async function init() {
       }),
     recalcTotals: recalcTotalsUI,
   };
+
+	window.__esusRecalcAfterRates = () => {
+	  deps.renderItems();
+	  recalcTotalsUI();
+	};
 
   // If we have esusAPI (Electron), use offers module.
   // Otherwise try localStorage restore.
@@ -373,7 +399,7 @@ async function init() {
         setItems((p.items || []).map(normalizeItem));
         deps.renderItems();
         recalcTotalsUI();
-
+		recalcAllRowsUI();
         document.getElementById("paymentMethod")
           ?.dispatchEvent(new Event("change"));
         document.getElementById("shippingNet")

@@ -90,10 +90,6 @@
 	
 	/* ===== Input z walutą (suffix) ===== */
 	/* klikana waluta */
-	.input-money {
-	  position: relative;
-	  display: block;
-	}
 
 	.input-money > input {
 	  padding-right: 52px; /* więcej miejsca, bo jest chevron */
@@ -556,4 +552,26 @@
 	.itemsDetailCaret {
 		font-size: 10px;
 		margin-left: 1px;
+	}
+	
+	
+		.input-money {
+	  position: relative;
+	}
+
+	/* hint z przeliczeniem */
+	.input-money .buyPlnHint{
+	  position: absolute;
+	  left: 0;
+	  bottom: -14px;          /* odstęp pod inputem */
+	  margin: 0 !important;   /* zabija margin-top z inline */
+	  white-space: nowrap;
+	  font-size: 11px;
+	  line-height: 1;
+	  opacity: .75;
+	  pointer-events: none;
+	}
+	/* żeby było miejsce pod inputem */
+	.input-money.has-pln-hint {
+	  padding-bottom: 16px;
 	}
