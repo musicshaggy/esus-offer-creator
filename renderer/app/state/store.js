@@ -1,9 +1,18 @@
+// renderer/app/state/store.js
+
 // Central in-memory store used by UI modules.
 // A few files import `store.items`, others import helper fns.
 // Keep both APIs for compatibility.
 
 export const store = {
   items: [],
+
+  // ✅ Kursy walut do przeliczeń kosztu zakupu -> PLN
+  exchange: {
+    rates: { USD: 4.0, EUR: 4.3 }, // fallback
+    lastUpdated: "brak danych",
+    isOutdated: true,
+  },
 };
 
 export function getItems() {
@@ -28,4 +37,18 @@ export function updateItem(idx, patch) {
   const it = store.items[idx];
   if (!it) return;
   store.items[idx] = { ...it, ...(patch || {}) };
+}
+
+// ✅ settery do kursów
+export function setExchange(next) {
+  if (!next || typeof next !== "object") return;
+  store.exchange = {
+    ...store.exchange,
+    ...(next || {}),
+    rates: { ...(store.exchange?.rates || {}), ...(next?.rates || {}) },
+  };
+}
+
+export function getExchange() {
+  return store.exchange;
 }

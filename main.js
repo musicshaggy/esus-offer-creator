@@ -479,11 +479,10 @@ function initAutoUpdater(mainWin) {
   });
 
   ipcMain.handle("upd:getStatus", async () => updState);
-  ipcMain.handle("upd:download", async () => {
-    await autoUpdater.checkForUpdates();
-    await autoUpdater.downloadUpdate();
-    return true;
-  });
+	ipcMain.handle("upd:download", async () => {
+	  await autoUpdater.downloadUpdate();
+	  return true;
+	});
   ipcMain.handle("upd:quitAndInstall", async () => {
     autoUpdater.quitAndInstall(false, true);
     return true;

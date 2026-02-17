@@ -214,6 +214,20 @@ export async function generatePdf({ onBefore } = {}) {
   doc.setFont(fontName, "bold");
   doc.setFontSize(16);
   doc.text(`${docLabel}: ${offerNo}`, pageW / 2, headerY, { align: "center" });
+  
+  //podtytul
+	const subtitle = (el("creatorNotes")?.value || "").trim();
+	let headerBlockBottomY = headerY;
+
+	if (subtitle) {
+	  doc.setFont(fontName, "normal");
+	  doc.setFontSize(11);
+	  doc.setTextColor(60);
+	  doc.text(subtitle, pageW / 2, headerY + 6, { align: "center" });
+	  doc.setTextColor(0);
+	  headerBlockBottomY = headerY + 6;
+	}
+  
 
   // Tabela
   const showDiscountCol = !!el("showDiscountColumnPdf").checked;
@@ -253,7 +267,7 @@ export async function generatePdf({ onBefore } = {}) {
   const warrantyFont = Math.max(6, Math.round(baseTableFont * 0.8));
 
   doc.autoTable({
-    startY: Math.max(creatorBlockBottomY, headerY + (isEstimate ? 8 : 6)),
+    startY: Math.max(creatorBlockBottomY, headerBlockBottomY + (isEstimate ? 8 : 6)),
     head: [head],
     body,
     theme: "grid",
@@ -440,37 +454,6 @@ export async function generatePdf({ onBefore } = {}) {
 
     doc.setTextColor(0);
     ty = boxY + boxH;
-  }
-
-  const notes = el("creatorNotes").value.trim();
-  if (notes) {
-    const boxX = margin;
-    const boxW = pageW - margin * 2;
-    let boxY = ty + 6;
-
-    const approxH = 14 + Math.min(7, doc.splitTextToSize(notes, pageW - margin * 2 - 10).length) * 4;
-    const moved = ensureSpace(approxH, boxY);
-    if (moved) boxY = margin + 20;
-
-    doc.setFont(fontName, "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(40);
-    doc.text("Uwagi:", boxX + 4, boxY + 6);
-
-    doc.setFont(fontName, "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(60);
-    const wrappedN = doc.splitTextToSize(notes, boxW - 10);
-    const nLines = wrappedN.slice(0, 7);
-    const textStartY = boxY + 11;
-    nLines.forEach((line, i) => doc.text(line, boxX + 5, textStartY + i * 4));
-
-    const boxH = 14 + nLines.length * 4;
-    doc.setDrawColor(0, 154, 255);
-    doc.setLineWidth(0.6);
-    doc.roundedRect(boxX, boxY, boxW, boxH, 2, 2);
-
-    doc.setTextColor(0);
   }
 
   // Stopka
