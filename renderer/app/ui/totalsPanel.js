@@ -1,9 +1,9 @@
-import { VAT_RATE } from "../config/constants.js";
 import { computeTotals } from "../calc/totals.js";
 import { money, toNumber } from "../utils/format.js";
 import { store } from "../state/store.js";
 import { getRateToPLN } from "../utils/exchangeRates.js";
 import { itemNetAfterDiscount } from "../calc/pricing.js";
+import { getVatRateFromUI, getVatFromUI } from "../utils/vat.js";
 
 let totals = {
   revenueNet: 0,
@@ -27,10 +27,13 @@ function buyNetPLN(it) {
 }
 
 export function recalcTotalsUI() {
-  // 1) Sumy sprzedażowe (netto/VAT/brutto) zostają jak były
-  const t = computeTotals(store.items, VAT_RATE);
+  const vatRate = getVatRateFromUI();
+  const vat = getVatFromUI();
+  setText("sumVatLabel", `Suma VAT ${vat.label}`);
 
-  // 2) ✅ Wewnętrzne: koszt / zysk / marża liczymy z uwzględnieniem waluty zakupu
+  const t = computeTotals(store.items, vatRate);
+
+  // 2) Wewnętrzne: koszt / zysk / marża z walutą zakupu
   let revenueNet = 0;
   let costNet = 0;
 

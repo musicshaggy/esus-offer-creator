@@ -647,6 +647,12 @@ initUpdateToasts();
     }
   }
 
+	document.getElementById("offerVat")?.addEventListener("change", () => {
+        recalcAllRowsUI();
+		recalcTotalsUI?.();
+	});
+
+
   document.addEventListener("click", (e) => {
     const btn = e.target.closest(".js-ccyBtn");
     const opt = e.target.closest(".ccyOpt");

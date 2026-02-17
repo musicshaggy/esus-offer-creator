@@ -1,4 +1,5 @@
-import { VAT_RATE, LOGO_URL_B, NOTO_REG_URL, NOTO_BOLD_URL } from "../config/constants.js";
+import { LOGO_URL_B, NOTO_REG_URL, NOTO_BOLD_URL } from "../config/constants.js";
+import { getVatFromUI } from "../utils/vat.js";
 import { el, money, toNumber, ymdToPL } from "../utils/format.js";
 import { store } from "../state/store.js";
 import { itemNetAfterDiscount } from "../calc/pricing.js";
@@ -128,6 +129,14 @@ export async function generatePdf({ onBefore } = {}) {
 
   const isEstimate = !!document.getElementById("isEstimate")?.checked;
 
+  // VAT z UI
+  const vat = getVatFromUI(); // { rate, label, code }
+  const VAT_RATE = vat.rate;
+
+  // Tekst do wąskiej kolumny VAT w tabeli
+  const vatCellLabel =
+    vat.code === "0_wdt" ? "WDT" : vat.code === "0_ex" ? "EX" : vat.label; // np. 23%
+
   function getFooterReserveHeight() {
     const companyFooter =
       "ESUS IT Spółka z o. o., ul. Somosierry 30A, 71-181 Szczecin. " +
@@ -211,31 +220,33 @@ export async function generatePdf({ onBefore } = {}) {
   const offerNoFromUi = (document.getElementById("offerNumberPreview")?.textContent || "").trim();
   const offerNo = offerNoFromUi && offerNoFromUi !== "—" ? offerNoFromUi : buildOfferNumber();
   const docLabel = isEstimate ? "Wycena szacunkowa" : "Oferta";
+
   doc.setFont(fontName, "bold");
   doc.setFontSize(16);
   doc.text(`${docLabel}: ${offerNo}`, pageW / 2, headerY, { align: "center" });
-  
-  //podtytul
-	const subtitle = (el("creatorNotes")?.value || "").trim();
-	let headerBlockBottomY = headerY;
 
-	if (subtitle) {
-	  doc.setFont(fontName, "normal");
-	  doc.setFontSize(11);
-	  doc.setTextColor(60);
-	  doc.text(subtitle, pageW / 2, headerY + 6, { align: "center" });
-	  doc.setTextColor(0);
-	  headerBlockBottomY = headerY + 6;
-	}
-  
+  // Podtytuł
+  const subtitle = (el("creatorNotes")?.value || "").trim();
+  let headerBlockBottomY = headerY;
 
-  // Tabela
+  if (subtitle) {
+    doc.setFont(fontName, "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(60);
+    doc.text(subtitle, pageW / 2, headerY + 6, { align: "center" });
+    doc.setTextColor(0);
+    headerBlockBottomY = headerY + 6;
+  }
+
+  // ===== Tabela =====
   const showDiscountCol = !!el("showDiscountColumnPdf").checked;
-  const head = ["Lp", "Opis", "Cena netto (po rab.)"];
+
+  // ✅ nowa kolumna VAT (wąska)
+  const head = ["Lp", "Opis", "Cena netto (po rab.)", "VAT"];
   if (showDiscountCol) head.push("Rabat");
   head.push("Cena brutto", "Ilość", "Wartość brutto");
 
-  // Body: opis bez gwarancji w tekście, gwarancję dorysujemy hookiem z innym fontem
+  // Body: opis bez gwarancji w tekście, gwarancję dorysujemy hookiem (mniejszy font)
   const body = store.items.map((it, idx) => {
     const qty = Math.max(1, parseInt(it.qty || 1, 10));
     const disc = Math.min(100, Math.max(0, toNumber(it.discount)));
@@ -243,15 +254,19 @@ export async function generatePdf({ onBefore } = {}) {
     const grossUnit = netAfter * (1 + VAT_RATE);
     const grossLine = grossUnit * qty;
 
-	const warranty = getWarrantyParts(it);
+    const warranty = getWarrantyParts(it);
 
-	// ✅ jeśli jest gwarancja → dodaj pustą linię jako “rezerwa miejsca”
-	const descCell = warranty ? `${it.desc || "-"}\n\u200B` : (it.desc || "-");
+    // ✅ jeśli jest gwarancja → dodaj pustą linię jako “rezerwa miejsca”
+    const descCell = warranty ? `${it.desc || "-"}\n\u200B` : (it.desc || "-");
 
-	const row = [String(idx + 1), descCell, money(netAfter).replace(" zł", "")];
-	row.__warranty = warranty;
+	const row = [
+	  String(idx + 1),
+	  descCell,
+	  money(netAfter).replace(" zł", ""),
+	  vatCellLabel
+	];
 
-
+    row.__warranty = warranty;
 
     if (showDiscountCol) row.push(`${disc.toLocaleString("pl-PL", { maximumFractionDigits: 2 })}%`);
     row.push(
@@ -262,7 +277,6 @@ export async function generatePdf({ onBefore } = {}) {
     return row;
   });
 
-  // bazowy font dla tabeli
   const baseTableFont = 9;
   const warrantyFont = Math.max(6, Math.round(baseTableFont * 0.8));
 
@@ -278,73 +292,65 @@ export async function generatePdf({ onBefore } = {}) {
       fontStyle: "bold",
     },
     styles: { font: fontName, fontStyle: "normal", fontSize: baseTableFont, cellPadding: 2.2 },
-    columnStyles: { 0: { cellWidth: 8 }, 1: { cellWidth: showDiscountCol ? 72 : 84 } },
 
+    // ✅ VAT to kolumna index=2, opis index=1
+    columnStyles: {
+      0: { cellWidth: 8 },                               // Lp
+      1: { cellWidth: showDiscountCol ? 64 : 72 },       // Opis (zwężone)
+      3: { cellWidth: 12, halign: "center" },            // VAT (wąska)
+      // reszta auto
+    },
 
+    // Rysowanie gwarancji w opisie (kolumna "Opis" = index 1)
+    didDrawCell: (data) => {
+      if (data.section !== "body") return;
+      if (data.column.index !== 1) return; // Opis
 
+      const w = data.row?.raw?.__warranty;
+      if (!w) return;
 
+      const scale = doc.internal.scaleFactor || 2.83465;
 
+      // autoTable już zawinęło opis + dodało pustą linię (placeholder)
+      const lines = Array.isArray(data.cell.text) ? data.cell.text.length : 1;
 
+      const baseLineH = (baseTableFont / scale) * 1.15;
+      const warrantyLineH = (warrantyFont / scale) * 1.15;
 
-    // 2) Dorysuj linię gwarancji mniejszym fontem i z boldem na NBD + miesiące
-		didDrawCell: (data) => {
-	  if (data.section !== "body") return;
-	  if (data.column.index !== 1) return; // Opis
+      const x0 = data.cell.x + data.cell.padding("left");
 
-	  const w = data.row?.raw?.__warranty;
-	  if (!w) return;
+      // rysujemy na ostatniej linii (tej pustej)
+      let y =
+        data.cell.y +
+        data.cell.padding("top") +
+        (lines - 1) * baseLineH;
 
-	  const scale = doc.internal.scaleFactor || 2.83465;
+      // korekta baseline dla mniejszego fontu
+      y += (baseLineH - warrantyLineH) * 3;
 
-	  // autoTable już zawinęło opis + dodało pustą linię (placeholder)
-	  const lines = Array.isArray(data.cell.text) ? data.cell.text.length : 1;
+      doc.setFontSize(warrantyFont);
 
-	  const baseLineH = (baseTableFont / scale) * 1.15;
-	  const warrantyLineH = (warrantyFont / scale) * 1.15;
+      let x = x0;
+      const write = (txt, bold) => {
+        doc.setFont(fontName, bold ? "bold" : "normal");
+        doc.text(txt, x, y);
+        x += doc.getTextWidth(txt);
+      };
 
-	  const x0 = data.cell.x + data.cell.padding("left");
+      write("Gwarancja ", false);
+      if (w.nbd) write("NBD ", true);
+      write(w.monthsText, true);
 
-	  // ✅ rysujemy NA OSTATNIEJ LINII (tej pustej), nie “po tekście”
-	  let y =
-		data.cell.y +
-		data.cell.padding("top") +
-		(lines - 1) * baseLineH;
-
-	  // drobna korekta baseline dla mniejszego fontu
-	  y += (baseLineH - warrantyLineH) * 3;
-
-	  doc.setFontSize(warrantyFont);
-
-	  let x = x0;
-	  const write = (txt, bold) => {
-		doc.setFont(fontName, bold ? "bold" : "normal");
-		doc.text(txt, x, y);
-		x += doc.getTextWidth(txt);
-	  };
-
-	  write("Gwarancja ", false);
-	  if (w.nbd) write("NBD ", true);
-	  write(w.monthsText, true);
-
-	  doc.setFont(fontName, "normal");
-	  doc.setFontSize(baseTableFont);
-	},
-
-
-
-
-
-
-
-
+      doc.setFont(fontName, "normal");
+      doc.setFontSize(baseTableFont);
+    },
   });
 
   const afterTableY = doc.lastAutoTable.finalY + 6;
 
-  // Podsumowanie
+  // ===== Podsumowanie =====
   const sumNet = store.items.reduce(
-    (acc, it) =>
-      acc + itemNetAfterDiscount(it) * Math.max(1, parseInt(it.qty || 1, 10)),
+    (acc, it) => acc + itemNetAfterDiscount(it) * Math.max(1, parseInt(it.qty || 1, 10)),
     0
   );
   const sumVat = sumNet * VAT_RATE;
@@ -360,14 +366,17 @@ export async function generatePdf({ onBefore } = {}) {
   doc.setFont(fontName, "normal");
   doc.setFontSize(10);
   const sumBlockY = afterTableY + 6;
+
   doc.text(`Suma netto: ${money(sumNet)}`, margin, sumBlockY);
-  doc.text(`VAT 23%: ${money(sumVat)}`, margin, sumBlockY + 5);
+  doc.text(`VAT ${vat.label}: ${money(sumVat)}`, margin, sumBlockY + 5);
+
   doc.setFont(fontName, "bold");
   doc.text(`Suma brutto: ${money(sumGross)}`, margin, sumBlockY + 10);
+
   doc.setFont(fontName, "normal");
-  if (shipNet === 0)
+  if (shipNet === 0) {
     doc.text("Dostawa: koszt po stronie sprzedawcy", pageW - margin, sumBlockY, { align: "right" });
-  else {
+  } else {
     doc.text(`Wysyłka netto: ${money(shipNet)}`, pageW - margin, sumBlockY, { align: "right" });
     doc.text(`Wysyłka brutto: ${money(shipGross)}`, pageW - margin, sumBlockY + 5, { align: "right" });
   }
@@ -378,9 +387,10 @@ export async function generatePdf({ onBefore } = {}) {
   doc.setLineWidth(1.2);
   doc.line(margin, lineY, pageW - margin, lineY);
 
-  // Warunki
+  // ===== Warunki =====
   let termsY = lineY + 8;
   if (ensureSpace(45, termsY)) termsY = margin + 20;
+
   doc.setFont(fontName, "bold");
   doc.setFontSize(11);
   doc.text("Warunki:", margin, termsY);
@@ -391,9 +401,8 @@ export async function generatePdf({ onBefore } = {}) {
   const paymentMethod = document.getElementById("paymentMethod")?.value || "prepay";
   const invoiceDays = document.getElementById("invoiceDays")?.value || "30";
   const payText =
-    paymentMethod === "prepay"
-      ? "Przedpłata"
-      : `Faktura z odroczonym terminem (${invoiceDays} dni)`;
+    paymentMethod === "prepay" ? "Przedpłata" : `Faktura z odroczonym terminem (${invoiceDays} dni)`;
+
   const validUntil = el("validUntil").value ? ymdToPL(el("validUntil").value) : "(nie podano)";
   const extra = el("termsExtra").value.trim();
 
@@ -456,7 +465,7 @@ export async function generatePdf({ onBefore } = {}) {
     ty = boxY + boxH;
   }
 
-  // Stopka
+  // ===== Stopka =====
   const footerMargin = margin;
   const companyFooter =
     "ESUS IT Spółka z o. o., ul. Somosierry 30A, 71-181 Szczecin. " +
@@ -468,6 +477,7 @@ export async function generatePdf({ onBefore } = {}) {
   doc.setFontSize(7.5);
   doc.setTextColor(120);
   const companyLines = doc.splitTextToSize(companyFooter, pageW - footerMargin * 2);
+
   let footerY = pageH - footerMargin;
   for (let i = companyLines.length - 1; i >= 0; i--) {
     doc.text(companyLines[i], pageW / 2, footerY, { align: "center" });
