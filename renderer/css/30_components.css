@@ -89,3 +89,28 @@
 	::-webkit-scrollbar-corner{
 	  background: #0b1220;
 	}
+
+	/* ===== Ustawienia oferty – jedna linia ===== */
+	.offerSettingsRow {
+	  display: grid;
+	  grid-template-columns: minmax(160px, 1fr)
+							 minmax(160px, 1fr)
+							 110px;
+	  gap: 16px;
+	  align-items: end;
+	}
+
+	.offerSettingsRow select {
+	  height: 38px;
+	}
+
+	/* Akcent wizualny – główne ustawienia */
+	.card.offerSettingsCard {
+	  border: 1px solid rgba(0, 154, 255, 0.35);
+	  background: linear-gradient(
+		135deg,
+		rgba(0,154,255,0.06),
+		rgba(0,154,255,0.02)
+	  );
+	}
+

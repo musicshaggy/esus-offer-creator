@@ -139,31 +139,84 @@
             <label>E-mail / Telefon (opcjonalnie)</label>
             <input id="custContact" placeholder="zamowienia@firma.pl / +48 ..." />
           </div>
-		  <div style="grid-column:1/-1">
-			<label class="mini" for="creatorNotes">Podtytuł dokumentu (np. nazwa przetargu)</label>
-			<input id="creatorNotes" type="text" placeholder="Np. Przetarg ABC / Zapytanie 12/2026" />
+          <div style="grid-column:1/-1">
+            <label class="mini" for="creatorNotes">Podtytuł dokumentu (np. nazwa przetargu)</label>
+            <input id="creatorNotes" type="text" placeholder="Np. Przetarg ABC / Zapytanie 12/2026" />
           </div>
         </div>
       </div>
 
-      <div class="card" style="padding:14px;">
-        <h2 style="margin:0 0 10px;">Dane osoby tworzącej ofertę</h2>
-        <div class="fields">
-          <div>
-            <label>Imię i nazwisko</label>
-            <input id="creatorName" placeholder="Np. Mateusz B." />
+      <!-- PRAWA KOLUMNA: najpierw ustawienia, potem osoba -->
+      <div class="rightCol" style="display:flex; flex-direction:column; gap:12px; min-width:0;">
+
+        <!-- NOWE: Ustawienia oferty (wyróżnione) -->
+		<div class="card offerSettingsCard" style="padding:14px;">
+          <h2 style="margin:0 0 10px; display:flex; align-items:center; gap:10px;">
+            <i class="fa-solid fa-sliders" style="color: rgba(140,200,255,.95);"></i>
+            Ustawienia oferty
+          </h2>
+
+			<div class="fields offerSettingsRow">
+			  <div>
+				<label>Język</label>
+				<select id="offerLang">
+				  <option value="pl" selected>Polski</option>
+				  <option value="en">Angielski</option>
+				  <option value="de">Niemiecki</option>
+				  <option value="hu">Węgierski</option>
+				</select>
+			  </div>
+
+			  <div>
+				<label>Waluta</label>
+				<select id="offerCurrency">
+				  <option value="PLN" selected>PLN</option>
+				  <option value="EUR">EUR</option>
+				  <option value="USD">USD</option>
+				</select>
+			  </div>
+
+			  <div>
+				<label>VAT</label>
+				<select id="offerVat">
+				  <option value="23" selected>23%</option>
+				  <option value="27">27%</option>
+				  <option value="19">19%</option>
+				  <option value="0_wdt">0% (WDT)</option>
+				  <option value="0_ex">0% (EX)</option>
+				</select>
+			  </div>
+			</div>
+
+
+
+          <div class="mini" style="margin-top:8px; opacity:.8;">
+            Domyślnie: Polski + PLN.
           </div>
-          <div>
-			  <label>E-mail</label>
-			  <input id="creatorEmail" placeholder="np. johndoe@esus-it.com" />
-			</div>
-			<div>
-			  <label>Telefon</label>
-			  <input id="creatorPhone" placeholder="np. +48 ..." />
-			</div>
         </div>
+
+        <!-- Dane osoby tworzącej ofertę (jak było) -->
+        <div class="card" style="padding:14px;">
+          <h2 style="margin:0 0 10px;">Dane osoby tworzącej ofertę</h2>
+          <div class="fields">
+            <div>
+              <label>Imię i nazwisko</label>
+              <input id="creatorName" placeholder="Np. Mateusz B." />
+            </div>
+            <div>
+              <label>E-mail</label>
+              <input id="creatorEmail" placeholder="np. johndoe@esus-it.com" />
+            </div>
+            <div>
+              <label>Telefon</label>
+              <input id="creatorPhone" placeholder="np. +48 ..." />
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
+
 
     <div class="mutedLine"></div>
 

@@ -86,6 +86,39 @@ function showPage(pageId) {
   }
 }
 
+function initOfferSettingsUI() {
+  const lang = document.getElementById("offerLang");
+  const vat = document.getElementById("offerVat");
+  if (!lang || !vat) return;
+
+  const defaultVatByLang = {
+    pl: "23",
+    hu: "27",
+    de: "19",
+    en: "23", // bezpieczny default (możesz zmienić później)
+  };
+
+  // Flaga: jeśli user ręcznie zmieni VAT, nie nadpisuj go automatem
+  let vatManuallyChanged = false;
+
+  vat.addEventListener("change", () => {
+    vatManuallyChanged = true;
+  });
+
+  lang.addEventListener("change", () => {
+    if (vatManuallyChanged) return;
+    const v = defaultVatByLang[String(lang.value || "pl")] || "23";
+    vat.value = v;
+  });
+
+  // ustaw domyślnie na starcie (jeśli VAT jest na default i nie było ręcznej zmiany)
+  const initial = defaultVatByLang[String(lang.value || "pl")] || "23";
+  vat.value = vat.value || initial;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  initOfferSettingsUI();
+});
 
 
 function normalizeItem(it = {}) {
