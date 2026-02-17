@@ -184,66 +184,127 @@ function bindCurrencyDelegationOnce(tbody, { onTotalsChanged, onStateChanged } =
   });
 
   tbody.addEventListener("click", (ev) => {
-    // open menu
-    const btn = ev.target.closest(".js-ccyBtn");
-    if (btn) {
-      ev.preventDefault();
-      ev.stopPropagation();
+   const btn = ev.target.closest(".js-ccyBtn");
+	if (btn) {
+	  ev.preventDefault();
+	  ev.stopPropagation();
 
-      const i = parseInt(btn.getAttribute("data-i"), 10);
-      if (!Number.isFinite(i)) return;
+	  const i = parseInt(btn.getAttribute("data-i"), 10);
+	  if (!Number.isFinite(i)) return;
 
-      const wrap = btn.closest(".input-money");
-      const menu = wrap?.querySelector(".js-ccyMenu");
-      if (!menu) return;
+	  const menu = ensureFloatingMenu();
 
-      const willOpen = !menu.classList.contains("is-open");
-      closeAll();
+	  // toggle
+	  if (_ccyCtx && _ccyCtx.btnEl === btn && menu.style.display === "block") {
+		closeFloatingMenu();
+		return;
+	  }
 
-      if (willOpen) {
-        menu.classList.add("is-open");
-        menu.setAttribute("aria-hidden", "false");
-        btn.setAttribute("aria-expanded", "true");
-      }
-      return;
-    }
+	  _ccyCtx = { i, btnEl: btn };
+	  positionFloatingMenu(menu, btn);
 
-    // choose currency
-    const opt = ev.target.closest(".ccyOpt");
-    if (opt) {
-      ev.preventDefault();
-      ev.stopPropagation();
+	  // zamykanie po kliknięciu poza
+	  setTimeout(() => {
+		document.addEventListener("click", (e2) => {
+		  if (menu.style.display !== "block") return;
+		  if (e2.target.closest(".ccyMenuFloating")) return;
+		  if (e2.target.closest(".js-ccyBtn")) return;
+		  closeFloatingMenu();
+		}, { once: true });
+	  }, 0);
 
-      const wrap = opt.closest(".input-money");
-      const btn2 = wrap?.querySelector(".js-ccyBtn");
-      const menu2 = wrap?.querySelector(".js-ccyMenu");
-      if (!btn2) return;
+	  document.addEventListener("scroll", onAnyScroll, true);
+	  window.addEventListener("resize", onResize);
+	  return;
+	}
 
-      const i = parseInt(btn2.getAttribute("data-i"), 10);
-      if (!Number.isFinite(i)) return;
-
-      const ccy = String(opt.getAttribute("data-ccy") || "PLN").toUpperCase();
-
-      updateItem(i, { buyCcy: ccy });
-
-      // update UI
-      btn2.textContent = ccy;
-      btn2.setAttribute("data-ccy", ccy);
-
-      if (menu2) {
-        menu2.classList.remove("is-open");
-        menu2.setAttribute("aria-hidden", "true");
-      }
-      btn2.setAttribute("aria-expanded", "false");
-
-      updateBuyPlnHintForIndex(i);
-
-      onTotalsChanged?.();
-      updateRowCalcUI(btn2.closest("tr"), store.items[i]);
-      onStateChanged?.();
-      return;
-    }
   });
+  
+  let _ccyFloating = null;
+let _ccyCtx = null; // { i, btnEl }
+
+function ensureFloatingMenu() {
+  if (_ccyFloating) return _ccyFloating;
+
+  const menu = document.createElement("div");
+  menu.className = "ccyMenuFloating";
+  menu.style.display = "none";
+
+  menu.innerHTML = `
+    <button type="button" class="ccyOpt" data-ccy="PLN">PLN</button>
+    <button type="button" class="ccyOpt" data-ccy="USD">USD</button>
+    <button type="button" class="ccyOpt" data-ccy="EUR">EUR</button>
+  `;
+
+  document.body.appendChild(menu);
+  _ccyFloating = menu;
+
+  // wybór opcji
+  menu.addEventListener("click", (ev) => {
+    const opt = ev.target.closest(".ccyOpt");
+    if (!opt || !_ccyCtx) return;
+
+    const ccy = String(opt.getAttribute("data-ccy") || "PLN").toUpperCase();
+    const { i, btnEl } = _ccyCtx;
+
+    updateItem(i, { buyCcy: ccy });
+
+    // update UI buttona
+    btnEl.textContent = ccy;
+    btnEl.setAttribute("data-ccy", ccy);
+
+    // update hint + przeliczenia
+    updateBuyPlnHintForIndex(i);
+    onTotalsChanged?.();
+    updateRowCalcUI(btnEl.closest("tr"), store.items[i]);
+    onStateChanged?.();
+
+    closeFloatingMenu();
+  });
+
+  return menu;
+}
+
+	function closeFloatingMenu() {
+	  if (!_ccyFloating) return;
+	  _ccyFloating.style.display = "none";
+	  _ccyCtx = null;
+	  document.removeEventListener("scroll", onAnyScroll, true);
+	  window.removeEventListener("resize", onResize);
+	}
+
+	function positionFloatingMenu(menu, btnEl) {
+	  const r = btnEl.getBoundingClientRect();
+	  const pad = 6;
+
+	  menu.style.display = "block";
+	  menu.style.left = `${Math.round(r.left)}px`;
+	  menu.style.top = `${Math.round(r.bottom + pad)}px`;
+
+	  // jeśli wychodzi poza ekran w prawo
+	  const mr = menu.getBoundingClientRect();
+	  if (mr.right > window.innerWidth - 8) {
+		const x = Math.max(8, window.innerWidth - mr.width - 8);
+		menu.style.left = `${Math.round(x)}px`;
+	  }
+
+	  // jeśli wychodzi poza dół, pokaż nad przyciskiem
+	  if (mr.bottom > window.innerHeight - 8) {
+		const y = Math.max(8, r.top - mr.height - pad);
+		menu.style.top = `${Math.round(y)}px`;
+	  }
+	}
+
+	function onAnyScroll() {
+	  if (!_ccyFloating || !_ccyCtx) return;
+	  positionFloatingMenu(_ccyFloating, _ccyCtx.btnEl);
+	}
+
+	function onResize() {
+	  if (!_ccyFloating || !_ccyCtx) return;
+	  positionFloatingMenu(_ccyFloating, _ccyCtx.btnEl);
+	}
+
 }
 
 export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
@@ -357,12 +418,6 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
 
           <!-- ✅ hint (absolutem zrobisz w CSS, żeby nie przesuwał buttona) -->
           <div class="buyPlnHint js-buyPlnHint" data-i="${idx}" style="display:none;"></div>
-
-          <div class="ccyMenu js-ccyMenu" role="listbox" aria-hidden="true">
-            <button type="button" class="ccyOpt" data-ccy="PLN">PLN</button>
-            <button type="button" class="ccyOpt" data-ccy="USD">USD</button>
-            <button type="button" class="ccyOpt" data-ccy="EUR">EUR</button>
-          </div>
         </div>
       </td>
 

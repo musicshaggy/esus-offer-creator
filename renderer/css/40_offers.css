@@ -574,3 +574,30 @@
 	/* żeby było miejsce pod inputem */
 	.input-money.has-pln-hint {
 	}
+	
+	/* global dropdown waluty (renderowany do body) */
+	.ccyMenuFloating{
+	  position: fixed;
+	  z-index: 99999;
+	  min-width: 120px;
+	  padding: 6px;
+	  border-radius: 10px;
+	  background: rgba(10,12,18,0.98);
+	  border: 1px solid rgba(255,255,255,0.14);
+	  box-shadow: 0 22px 60px rgba(0,0,0,0.6);
+	}
+
+	.ccyMenuFloating .ccyOpt{
+	  width: 100%;
+	  text-align: left;
+	  padding: 8px 10px;
+	  border-radius: 8px;
+	  border: 0;
+	  background: transparent;
+	  color: rgba(255,255,255,0.92);
+	  cursor: pointer;
+	}
+
+	.ccyMenuFloating .ccyOpt:hover{
+	  background: rgba(255,255,255,0.08);
+}
