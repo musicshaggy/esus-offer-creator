@@ -23,7 +23,7 @@ import {
 
 import { fetchExchangeRates, loadCachedExchangeRates } from "./utils/exchangeRates.js";
 import { setExchange } from "./state/store.js";
-
+import { changeOfferCurrency } from "./utils/offerCurrency.js";
 
 
 import {
@@ -652,6 +652,11 @@ initUpdateToasts();
 		recalcTotalsUI?.();
 	});
 
+	document.getElementById("offerCurrency")?.addEventListener("change", (e) => {
+	  changeOfferCurrency(e.target.value);
+	  renderItems({ onTotalsChanged: recalcTotalsUI }); // jak masz
+	  recalcTotalsUI();
+	});
 
   document.addEventListener("click", (e) => {
     const btn = e.target.closest(".js-ccyBtn");

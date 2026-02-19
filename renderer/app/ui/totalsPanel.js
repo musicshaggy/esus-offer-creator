@@ -1,5 +1,5 @@
 import { computeTotals } from "../calc/totals.js";
-import { money, toNumber } from "../utils/format.js";
+import { money, moneyCcy, toNumber } from "../utils/format.js";
 import { store } from "../state/store.js";
 import { getRateToPLN } from "../utils/exchangeRates.js";
 import { itemNetAfterDiscount } from "../calc/pricing.js";
@@ -54,12 +54,12 @@ export function recalcTotalsUI() {
     marginPct,
   };
 
-  setText("sumNet", money(totals.revenueNet));
-  setText("sumVat", money(totals.sumVat));
-  setText("sumGross", money(totals.sumGross));
+  setText("sumNet", moneyCcy(totals.revenueNet));
+  setText("sumVat", moneyCcy(totals.sumVat));
+  setText("sumGross", moneyCcy(totals.sumGross));
 
-  setText("sumCostNet", money(totals.costNet));
-  setText("sumProfitNet", money(totals.profitNet));
+  setText("sumCostNet", moneyCcy(totals.costNet));
+  setText("sumProfitNet", moneyCcy(totals.profitNet));
   setText(
     "sumMargin",
     totals.marginPct.toLocaleString("pl-PL", { maximumFractionDigits: 2 }) + "%"

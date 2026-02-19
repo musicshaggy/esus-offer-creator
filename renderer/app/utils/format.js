@@ -48,3 +48,16 @@ export function ymdToPL(ymd) {
   if (!m) return s;
   return `${m[3]}.${m[2]}.${m[1]}`;
 }
+
+export function moneyCcy(amount, ccy = "PLN") {
+  const code = String(ccy || "PLN").toUpperCase();
+  const n = Number(amount || 0);
+
+  // prosto i przewidywalnie (bez Intl, żeby nie rozwalić separatorów jak w PL)
+  const txt = n.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  if (code === "PLN") return `${txt} zł`;
+  if (code === "EUR") return `${txt} €`;
+  if (code === "USD") return `${txt} $`;
+  return `${txt} ${code}`;
+}

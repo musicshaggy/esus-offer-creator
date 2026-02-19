@@ -1,3 +1,4 @@
+// main.js
 const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
@@ -11,7 +12,6 @@ let win = null;
 
 function closeSplash() {
   if (splashWin && !splashWin.isDestroyed()) {
-    // destroy() jest pewniejsze niż close() dla frameless/alwaysOnTop/closable:false
     splashWin.destroy();
   }
   splashWin = null;
@@ -38,7 +38,6 @@ function todayYMD() {
   return `${y}-${m}-${day}`;
 }
 
-
 function createSplash() {
   splashWin = new BrowserWindow({
     width: 480,
@@ -56,11 +55,8 @@ function createSplash() {
   });
 
   splashWin.loadFile(path.join(__dirname, "renderer", "splash.html"));
-
-  // (opcjonalnie) na wszelki wypadek:
   splashWin.on("closed", () => (splashWin = null));
 }
-
 
 function createWindow() {
   win = new BrowserWindow({
@@ -74,8 +70,8 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
-      nodeIntegration: false
-    }
+      nodeIntegration: false,
+    },
   });
 
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
@@ -96,12 +92,10 @@ function createWindow() {
   }, 8000);
 }
 
-
-
 function getSettingsPath() {
-  // userData jest per użytkownik Windows
   return path.join(app.getPath("userData"), "user-settings.json");
 }
+
 function readJsonSafe(p, fallback) {
   try {
     if (!fs.existsSync(p)) return fallback;
@@ -147,13 +141,6 @@ function pad2(x) {
   return String(x).padStart(2, "0");
 }
 
-function offerKey(initials) {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = pad2(now.getMonth() + 1);
-  return `${y}-${m}_${initials}`;
-}
-
 function buildOfferNo(seq, initials) {
   const now = new Date();
   const y = now.getFullYear();
@@ -165,7 +152,6 @@ function buildOfferNo(seq, initials) {
 /**
  * Compute next offer sequence number for given initials and year/month (1-12)
  * using "smallest missing positive integer" among existing offers.
- * This fills gaps after deletions (e.g. delete 3 -> next is 3).
  */
 function computeNextSeqFromOffers(initials, year, month) {
   const y = String(year);
@@ -198,13 +184,30 @@ function computeNextSeqFromOffers(initials, year, month) {
   return next;
 }
 
+/** ===== Offer meta normalization (NEW) =====
+ *  Zapewnia, że meta zawsze ma podstawowe ustawienia dokumentu
+ *  (waluta oferty / język / VAT code), nawet jeśli renderer ich nie dośle.
+ */
+function normalizeOfferMeta(meta, fallbackMeta) {
+  const m = { ...(fallbackMeta || {}), ...(meta || {}) };
+
+  // defaults (ważne dla wstecznej kompatybilności starych ofert)
+  if (!m.offerCcy) m.offerCcy = "PLN"; // PLN | EUR | USD
+  if (!m.lang) m.lang = "pl"; // pl | en | de | hu
+  if (!m.vatCode) m.vatCode = "23"; // "23" | "19" | "27" | "0_wdt" | "0_ex" | etc.
+
+  // ustandaryzuj format
+  m.offerCcy = String(m.offerCcy).toUpperCase();
+  m.lang = String(m.lang).toLowerCase();
+
+  return m;
+}
 
 app.whenReady().then(() => {
   splashClosed = false;
   createSplash();
   createWindow();
 
-  // init auto-update after creating main window
   initAutoUpdater(win);
 });
 
@@ -215,19 +218,38 @@ app.on("window-all-closed", () => {
 // ===== IPC: user settings =====
 ipcMain.handle("settings:get", async () => {
   const p = getSettingsPath();
-  return readJsonSafe(p, { initials: "", offerSeq: {}, profile: null });
+  return readJsonSafe(p, {
+    initials: "",
+    offerSeq: {},
+    profile: null,
+    // ✅ globalne preferencje dokumentu (fallback dla nowych ofert)
+    docDefaults: { offerCcy: "PLN", lang: "pl", vatCode: "23" },
+  });
 });
 
 ipcMain.handle("settings:set", async (_evt, patch) => {
   const p = getSettingsPath();
-  const current = readJsonSafe(p, { initials: "", offerSeq: {}, profile: null });
+  const current = readJsonSafe(p, {
+    initials: "",
+    offerSeq: {},
+    profile: null,
+    docDefaults: { offerCcy: "PLN", lang: "pl", vatCode: "23" },
+  });
+
   const next = {
     ...current,
     ...patch,
-    // merge offerSeq if provided
     offerSeq: { ...(current.offerSeq || {}), ...(patch?.offerSeq || {}) },
-    profile: patch?.profile ? { ...(current.profile || {}), ...patch.profile } : (current.profile || null),
+    profile: patch?.profile
+      ? { ...(current.profile || {}), ...patch.profile }
+      : current.profile || null,
+
+    // ✅ merge docDefaults (jeśli renderer zacznie to zapisywać)
+    docDefaults: patch?.docDefaults
+      ? { ...(current.docDefaults || {}), ...patch.docDefaults }
+      : current.docDefaults || { offerCcy: "PLN", lang: "pl", vatCode: "23" },
   };
+
   writeJsonSafe(p, next);
   return next;
 });
@@ -253,20 +275,31 @@ ipcMain.handle("offers:list", async () => {
 
 ipcMain.handle("offers:getLast", async () => {
   const idx = readOffersIndex();
-  return (idx.ids && idx.ids[0]) ? idx.ids[0] : null;
+  return idx.ids && idx.ids[0] ? idx.ids[0] : null;
 });
 
 ipcMain.handle("offers:open", async (_evt, id) => {
   const p = offerFilePath(id);
   if (!fs.existsSync(p)) throw new Error("Oferta nie istnieje");
-  return readJsonSafe(p, null);
+  const payload = readJsonSafe(p, null);
+
+  // ✅ w razie starych ofert: dopnij brakujące meta ustawienia
+  if (payload && payload.meta) payload.meta = normalizeOfferMeta(payload.meta, null);
+
+  return payload;
 });
 
-
 async function createFreshOfferPayload() {
-  // Create fresh payload with auto numbering based on existing offers (gap-filling).
-  const settings = readJsonSafe(getSettingsPath(), { initials: "XX", offerSeq: {}, profile: null });
-  const initials = (settings?.profile?.initials || settings?.initials || "XX").trim().toUpperCase() || "XX";
+  const settings = readJsonSafe(getSettingsPath(), {
+    initials: "XX",
+    offerSeq: {},
+    profile: null,
+    docDefaults: { offerCcy: "PLN", lang: "pl", vatCode: "23" },
+  });
+
+  const initials = (settings?.profile?.initials || settings?.initials || "XX")
+    .trim()
+    .toUpperCase() || "XX";
 
   const now = new Date();
   const year = now.getFullYear();
@@ -275,18 +308,27 @@ async function createFreshOfferPayload() {
   const nextSeq = computeNextSeqFromOffers(initials, year, month);
   const offerNo = buildOfferNo(nextSeq, initials);
 
-  // Keep initials in settings (legacy offerSeq is no longer used for numbering).
   settings.initials = initials;
   writeJsonSafe(getSettingsPath(), settings);
 
   const id = makeId();
+
+  // ✅ doc defaults z user-settings.json (fallback na stałe wartości)
+  const dd = settings?.docDefaults || {};
   const payload = {
     id,
-    meta: {
-      offerNo,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
+    meta: normalizeOfferMeta(
+      {
+        offerNo,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+
+        offerCcy: dd.offerCcy || "PLN",
+        lang: dd.lang || "pl",
+        vatCode: dd.vatCode || "23",
+      },
+      null
+    ),
     fields: {
       offerDate: todayYMD(),
       paymentMethod: "invoice",
@@ -297,12 +339,13 @@ async function createFreshOfferPayload() {
     totals: null,
   };
 
-  // persist immediately so it appears on the list
   writeJsonSafe(offerFilePath(id), payload);
+
   const idx = readOffersIndex();
   const ids = Array.isArray(idx.ids) ? idx.ids : [];
   if (!ids.includes(id)) ids.unshift(id);
   writeOffersIndex({ ids });
+
   return payload;
 }
 
@@ -312,22 +355,36 @@ ipcMain.handle("offers:new", async () => {
 
 ipcMain.handle("offers:save", async (_evt, payload) => {
   if (!payload || typeof payload !== "object") throw new Error("Nieprawidłowy payload");
+
   const id = payload.id || makeId();
+  const filePath = offerFilePath(id);
+
+  // ✅ merge z istniejącą ofertą, żeby nie zgubić meta ustawień (waluta/język/VAT)
+  const existing = fs.existsSync(filePath) ? readJsonSafe(filePath, null) : null;
+  const existingMeta = existing?.meta || null;
+
   const next = {
-    ...payload,
+    ...(existing || {}), // zachowaj ewentualne brakujące rzeczy z pliku
+    ...payload, // renderer ma pierwszeństwo dla fields/items/totals
     id,
-    meta: {
-      ...(payload.meta || {}),
-      updatedAt: new Date().toISOString(),
-    },
+    meta: normalizeOfferMeta(
+      {
+        ...(existingMeta || {}),
+        ...(payload.meta || {}),
+        updatedAt: new Date().toISOString(),
+      },
+      null
+    ),
   };
-  writeJsonSafe(offerFilePath(id), next);
+
+  writeJsonSafe(filePath, next);
 
   const idx = readOffersIndex();
   const ids = Array.isArray(idx.ids) ? idx.ids : [];
   const without = ids.filter((x) => x !== id);
   without.unshift(id);
   writeOffersIndex({ ids: without });
+
   return next;
 });
 
@@ -343,21 +400,41 @@ ipcMain.handle("offers:delete", async (_evt, id) => {
 ipcMain.handle("offers:duplicate", async (_evt, id) => {
   const srcPath = offerFilePath(id);
   if (!fs.existsSync(srcPath)) throw new Error("Oferta nie istnieje");
+
   const src = readJsonSafe(srcPath, null);
   const fresh = await createFreshOfferPayload();
-  // Keep the new offerNo, but copy content
+
+  // ✅ przenieś ustawienia dokumentu (waluta/język/VAT) ze źródłowej oferty
+  const srcMeta = src?.meta || {};
+  const keepSettingsMeta = {
+    offerCcy: srcMeta.offerCcy,
+    lang: srcMeta.lang,
+    vatCode: srcMeta.vatCode,
+  };
+
   const payload = {
     ...fresh,
+    meta: normalizeOfferMeta(
+      {
+        ...fresh.meta, // zachowaj nowe offerNo/createdAt
+        ...keepSettingsMeta, // ustawienia bierzemy z kopii
+        updatedAt: new Date().toISOString(),
+      },
+      null
+    ),
     fields: src.fields || {},
     items: src.items || [],
     totals: src.totals || null,
   };
+
   writeJsonSafe(offerFilePath(payload.id), payload);
+
   const idx = readOffersIndex();
   const ids = Array.isArray(idx.ids) ? idx.ids : [];
   const without = ids.filter((x) => x !== payload.id);
   without.unshift(payload.id);
   writeOffersIndex({ ids: without });
+
   return payload;
 });
 
@@ -366,7 +443,7 @@ ipcMain.handle("file:saveJson", async (_evt, { defaultName, data }) => {
   const res = await dialog.showSaveDialog({
     title: "Zapisz ofertę (JSON)",
     defaultPath: defaultName || "oferta.json",
-    filters: [{ name: "JSON", extensions: ["json"] }]
+    filters: [{ name: "JSON", extensions: ["json"] }],
   });
   if (res.canceled || !res.filePath) return { ok: false, canceled: true };
 
@@ -378,7 +455,7 @@ ipcMain.handle("file:loadJson", async () => {
   const res = await dialog.showOpenDialog({
     title: "Wczytaj ofertę (JSON)",
     properties: ["openFile"],
-    filters: [{ name: "JSON", extensions: ["json"] }]
+    filters: [{ name: "JSON", extensions: ["json"] }],
   });
   if (res.canceled || !res.filePaths?.[0]) return { ok: false, canceled: true };
 
@@ -391,7 +468,7 @@ ipcMain.handle("export:excel", async (_evt, { defaultName, buffer }) => {
   const res = await dialog.showSaveDialog({
     title: "Zapisz Excel",
     defaultPath: defaultName || "ESUS.xlsx",
-    filters: [{ name: "Excel", extensions: ["xlsx"] }]
+    filters: [{ name: "Excel", extensions: ["xlsx"] }],
   });
   if (res.canceled || !res.filePath) return { ok: false, canceled: true };
 
@@ -400,8 +477,8 @@ ipcMain.handle("export:excel", async (_evt, { defaultName, buffer }) => {
 });
 
 ipcMain.handle("window:minimize", (evt) => {
-  const win = BrowserWindow.fromWebContents(evt.sender);
-  win?.minimize();
+  const w = BrowserWindow.fromWebContents(evt.sender);
+  w?.minimize();
 });
 
 ipcMain.handle("app:getVersion", () => {
@@ -409,29 +486,29 @@ ipcMain.handle("app:getVersion", () => {
 });
 
 ipcMain.handle("window:toggleMaximize", (evt) => {
-  const win = BrowserWindow.fromWebContents(evt.sender);
-  if (!win) return { maximized: false };
+  const w = BrowserWindow.fromWebContents(evt.sender);
+  if (!w) return { maximized: false };
 
-  if (win.isMaximized()) win.unmaximize();
-  else win.maximize();
+  if (w.isMaximized()) w.unmaximize();
+  else w.maximize();
 
-  return { maximized: win.isMaximized() };
+  return { maximized: w.isMaximized() };
 });
 
 ipcMain.handle("window:close", (evt) => {
-  const win = BrowserWindow.fromWebContents(evt.sender);
-  win?.close();
+  const w = BrowserWindow.fromWebContents(evt.sender);
+  w?.close();
 });
 
 ipcMain.handle("window:isMaximized", (evt) => {
-  const win = BrowserWindow.fromWebContents(evt.sender);
-  return { maximized: !!win?.isMaximized() };
+  const w = BrowserWindow.fromWebContents(evt.sender);
+  return { maximized: !!w?.isMaximized() };
 });
 
 ipcMain.handle("offers:nextSeq", async (_evt, { initials, year, month }) => {
   const ini = String(initials || "XX").trim().toUpperCase() || "XX";
   const y = Number(year) || new Date().getFullYear();
-  const m = Number(month) || (new Date().getMonth() + 1);
+  const m = Number(month) || new Date().getMonth() + 1;
   return computeNextSeqFromOffers(ini, y, m);
 });
 
@@ -471,7 +548,6 @@ function initAutoUpdater(mainWin) {
     mainWin.webContents.send("upd:update-error", updState.error);
   });
 
-  // re-emit state after renderer loads (prevents race where events fire before listeners)
   mainWin.webContents.on("did-finish-load", () => {
     if (updState.available) mainWin.webContents.send("upd:update-available", updState.available);
     if (updState.downloaded) mainWin.webContents.send("upd:update-downloaded", updState.downloaded);
@@ -479,10 +555,10 @@ function initAutoUpdater(mainWin) {
   });
 
   ipcMain.handle("upd:getStatus", async () => updState);
-	ipcMain.handle("upd:download", async () => {
-	  await autoUpdater.downloadUpdate();
-	  return true;
-	});
+  ipcMain.handle("upd:download", async () => {
+    await autoUpdater.downloadUpdate();
+    return true;
+  });
   ipcMain.handle("upd:quitAndInstall", async () => {
     autoUpdater.quitAndInstall(false, true);
     return true;
