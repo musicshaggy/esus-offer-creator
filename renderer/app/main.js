@@ -8,7 +8,7 @@ import { initWindowControls } from "./ui/windowControls.js";
 import { ensureUserProfile, applyProfileToForm } from "./ui/profileModal.js";
 import { refreshOfferPreview, loadUserInitialsAndSeq, persistInitials } from "./ui/offerNumber.js";
 import { initOffersSubpage } from "./ui/offersPage.js";
-import { renderItems, recalcAllRowsUI  } from "./ui/itemsTable.js";
+import { renderItems, recalcAllRowsUI } from "./ui/itemsTable.js";
 
 import { clearSavedState, loadStateFromStorage } from "./state/persistence.js";
 import { generatePdf } from "./export/pdf.js";
@@ -25,7 +25,6 @@ import { fetchExchangeRates, loadCachedExchangeRates } from "./utils/exchangeRat
 import { setExchange } from "./state/store.js";
 import { changeOfferCurrency } from "./utils/offerCurrency.js";
 
-
 import {
   bootLastOrCreateNew,
   createNewOffer,
@@ -33,6 +32,8 @@ import {
   scheduleAutosave,
   saveNow,
   setActiveOffer,
+  flushAutosave,
+  commitAndSaveNow, // ✅ DODANE
 } from "./offers/offersController.js";
 
 // 1) sync: z localStorage (żeby EUR/USD działało od razu po otwarciu oferty)
@@ -42,12 +43,9 @@ setExchange(loadCachedExchangeRates());
 fetchExchangeRates().then((ex) => {
   setExchange(ex);
 
-  // ważne: po aktualizacji kursów przelicz marże w widoku
-  // (najprościej: wywołać render items / recalc totals)
   try {
-    // jeśli masz globalne deps/renderItems:
-        recalcAllRowsUI();
-		recalcTotalsUI?.();
+    recalcAllRowsUI();
+    recalcTotalsUI?.();
   } catch {}
 });
 
@@ -89,37 +87,67 @@ function showPage(pageId) {
 function initOfferSettingsUI() {
   const lang = document.getElementById("offerLang");
   const vat = document.getElementById("offerVat");
+  const ccy = document.getElementById("offerCurrency");
   if (!lang || !vat) return;
 
   const defaultVatByLang = {
     pl: "23",
     hu: "27",
     de: "19",
-    en: "23", // bezpieczny default (możesz zmienić później)
+    en: "23",
   };
 
-  // Flaga: jeśli user ręcznie zmieni VAT, nie nadpisuj go automatem
-  let vatManuallyChanged = false;
+  // tylko EN/DE -> EUR, reszta bez zmian
+  const defaultCcyByLang = {
+    en: "EUR",
+    de: "EUR",
+	pl: "PLN"
+  };
 
-  vat.addEventListener("change", () => {
-    vatManuallyChanged = true;
+  let vatManuallyChanged = false;
+  let ccyManuallyChanged = false;
+
+  // ✅ tylko zmiany użytkownika blokują automat
+  vat.addEventListener("change", (e) => {
+    if (e?.isTrusted) vatManuallyChanged = true;
+  });
+
+  ccy?.addEventListener("change", (e) => {
+    if (e?.isTrusted) ccyManuallyChanged = true;
   });
 
   lang.addEventListener("change", () => {
-    if (vatManuallyChanged) return;
-    const v = defaultVatByLang[String(lang.value || "pl")] || "23";
-    vat.value = v;
+    const langCode = String(lang.value || "pl");
+
+    // 1) VAT auto
+    if (!vatManuallyChanged) {
+      const nextVat = defaultVatByLang[langCode] || "23";
+      if (String(vat.value || "") !== String(nextVat)) {
+        vat.value = nextVat;
+        // odpali Twoje istniejące przeliczenia (offerVat change listener)
+        vat.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }
+
+    // 2) Waluta auto (tylko en/de -> EUR)
+    if (ccy && !ccyManuallyChanged) {
+      const nextCcy = defaultCcyByLang[langCode] || null;
+      if (nextCcy && String(ccy.value || "").toUpperCase() !== nextCcy) {
+        ccy.value = nextCcy;
+        // odpali Twoją istniejącą logikę przeliczania (offerCurrency change listener)
+        ccy.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }
   });
 
-  // ustaw domyślnie na starcie (jeśli VAT jest na default i nie było ręcznej zmiany)
-  const initial = defaultVatByLang[String(lang.value || "pl")] || "23";
-  vat.value = vat.value || initial;
+  // init VAT (jak było)
+  const initialVat = defaultVatByLang[String(lang.value || "pl")] || "23";
+  vat.value = vat.value || initialVat;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   initOfferSettingsUI();
 });
-
 
 function normalizeItem(it = {}) {
   const w = it?.warranty && typeof it.warranty === "object" ? it.warranty : {};
@@ -130,10 +158,9 @@ function normalizeItem(it = {}) {
     desc: it.desc ?? "",
     net: Number(it.net ?? 0),
     buyNet: Number(it.buyNet ?? 0),
-	buyCcy: String(it.buyCcy || "PLN").toUpperCase(),
+    buyCcy: String(it.buyCcy || "PLN").toUpperCase(),
     discount: Number(it.discount ?? 0),
     qty: Math.max(1, parseInt(it.qty ?? 1, 10) || 1),
-
     warranty: { months, nbd },
   };
 }
@@ -143,7 +170,6 @@ async function autosaveActiveOffer() {
   try {
     const payload = collectOfferPayload({ getItems, getTotals: getTotalsUI });
 
-    // keep basic form fields for list preview / re-open
     payload.fields = payload.fields || {};
     document.querySelectorAll("input,select,textarea").forEach((n) => {
       if (!n.id) return;
@@ -166,7 +192,6 @@ function wireAutosaveOnFormInputs() {
 function wireAddItemButtons() {
   const add = () => {
     addItem(normalizeItem({ qty: 1 }));
-    // re-render with callbacks so totals/autosave keep working
     renderItems({
       onTotalsChanged: recalcTotalsUI,
       onStateChanged: () => scheduleAutosave(autosaveActiveOffer),
@@ -193,9 +218,11 @@ function wirePdfButton() {
 function wireClearButton() {
   el("btnClear")?.addEventListener("click", () => {
     clearSavedState();
-    // keep UI consistent
     setItems([]);
-    renderItems({ onTotalsChanged: recalcTotalsUI, onStateChanged: () => scheduleAutosave(autosaveActiveOffer) });
+    renderItems({
+      onTotalsChanged: recalcTotalsUI,
+      onStateChanged: () => scheduleAutosave(autosaveActiveOffer),
+    });
     recalcTotalsUI();
     showToast("Wyczyszczono zapis lokalny (localStorage).");
   });
@@ -248,7 +275,6 @@ function formEl(id) {
 }
 
 function clearCustomerFields() {
-  // Czyścimy UI zawsze przez formEl (root = #mainPage) – bez ryzyka konfliktu ID
   const ids = ["custName", "custNip", "custAddr", "custContact"];
   for (const id of ids) {
     const node = formEl(id);
@@ -257,7 +283,6 @@ function clearCustomerFields() {
     if ("value" in node) node.value = "";
     else node.textContent = "";
 
-    // Żeby logika nasłuchów (input/change) nie "odbiła" starych wartości
     try {
       node.dispatchEvent(new Event("input", { bubbles: true }));
       node.dispatchEvent(new Event("change", { bubbles: true }));
@@ -265,7 +290,6 @@ function clearCustomerFields() {
   }
 }
 
-// [invoiceDays] helpers
 function clampInt(v, min, max, fallback) {
   const s = String(v ?? "").trim();
   if (!s) return fallback;
@@ -274,12 +298,10 @@ function clampInt(v, min, max, fallback) {
   return Math.min(max, Math.max(min, n));
 }
 
-// [invoiceDays] apply + wire input (1–60)
 function applyInvoiceDaysToFormValue(raw) {
   const node = formEl("invoiceDays");
   if (!node) return;
 
-  // Uwaga: gdy pusta wartość w ofercie, zostaw puste (nie narzucaj defaultu w UI)
   if (raw === undefined || raw === null || String(raw).trim() === "") {
     node.value = "";
     return;
@@ -293,15 +315,11 @@ function wireInvoiceDaysInput() {
   const node = formEl("invoiceDays");
   if (!node) return;
 
-  // input: zapisuje bezpiecznie (dociska w tle), ale nie zmienia użytkownikowi w trakcie pisania
   node.addEventListener("input", () => {
-    const val = clampInt(node.value, 1, 60, 14);
-    // zapis do payload.fields i tak zrobi autosave (zbiera po id), ale tu trzymamy UI “w ryzach”
-    // nie ustawiamy node.value tutaj, żeby user mógł pisać
+    clampInt(node.value, 1, 60, 14);
     scheduleAutosave(autosaveActiveOffer);
   });
 
-  // blur: docisk + wpisz do pola (żeby user widział finalną wartość)
   node.addEventListener("blur", () => {
     const val = clampInt(node.value, 1, 60, 14);
     node.value = String(val);
@@ -312,23 +330,19 @@ function wireInvoiceDaysInput() {
 async function init() {
   initWindowControls();
 
-  // date defaults (if field exists)
   const dateEl = el("offerDate");
   if (dateEl && !dateEl.value) dateEl.value = todayYMD();
 
-  // Ensure user profile exists, then populate form
   try {
     const profile = await ensureUserProfile();
     applyProfileToForm(profile);
 
-    // default initials from profile if creatorInitials empty
     const initialsEl = el("creatorInitials");
     if (initialsEl && !initialsEl.value.trim()) initialsEl.value = profile?.initials || "";
   } catch (e) {
     console.warn("Profile init failed:", e);
   }
 
-  // Load initials + monthly seq from settings (Electron) if available
   await loadUserInitialsAndSeq({
     getInitialsEl: el("creatorInitials"),
     setInitialsEl: el("creatorInitials"),
@@ -338,18 +352,15 @@ async function init() {
   wireOfferNumberControls();
 
   wireTermsUi();
-
-  // [invoiceDays] wire manual input (1–60)
   wireInvoiceDaysInput();
 
-  // Render items with callbacks
   renderItems({
     onTotalsChanged: recalcTotalsUI,
     onStateChanged: () => scheduleAutosave(autosaveActiveOffer),
   });
   recalcTotalsUI();
   recalcAllRowsUI();
-  
+
   wireAddItemButtons();
   wirePdfButton();
   initExcelExport({
@@ -358,7 +369,6 @@ async function init() {
   wireClearButton();
   wireAutosaveOnFormInputs();
 
-  // Offers (Electron) – fallback to localStorage when run in browser
   const deps = {
     setItems: (items) => setItems((items || []).map(normalizeItem)),
     renderItems: () =>
@@ -369,13 +379,11 @@ async function init() {
     recalcTotals: recalcTotalsUI,
   };
 
-	window.__esusRecalcAfterRates = () => {
-	  deps.renderItems();
-	  recalcTotalsUI();
-	};
+  window.__esusRecalcAfterRates = () => {
+    deps.renderItems();
+    recalcTotalsUI();
+  };
 
-  // If we have esusAPI (Electron), use offers module.
-  // Otherwise try localStorage restore.
   if (window.esusAPI) {
     const payload = await bootLastOrCreateNew(deps);
     if (el("offerNumberPreview")) el("offerNumberPreview").textContent = payload?.meta?.offerNo || "—";
@@ -387,14 +395,13 @@ async function init() {
         const p = await createNewOffer(deps);
         setActiveOffer(p);
 
-    currentOfferId = p?.id || null;
+        currentOfferId = p?.id || null;
         if (el("offerNumberPreview")) {
           el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
         }
 
         showPage("mainPage");
 
-        // WAŻNE: wyczyść klienta *po* przełączeniu widoku (żeby nic go nie nadpisało)
         queueMicrotask(() => {
           clearCustomerFields();
           scheduleAutosave(autosaveActiveOffer);
@@ -404,13 +411,11 @@ async function init() {
       onOpenOfferLoaded: async (p) => {
         setActiveOffer(p);
 
-    currentOfferId = p?.id || null;
+        currentOfferId = p?.id || null;
         if (el("offerNumberPreview")) {
-          el("offerNumberPreview").textContent =
-            p?.meta?.offerNo || p?.offerNo || "—";
+          el("offerNumberPreview").textContent = p?.meta?.offerNo || p?.offerNo || "—";
         }
 
-        // APPLY FIELDS (żeby klient i reszta pól nie zostawały z poprzedniej oferty)
         const fields = p?.fields || {};
         ["custName", "custNip", "custAddr", "custContact"].forEach((id) => {
           const node = formEl(id);
@@ -426,29 +431,40 @@ async function init() {
           else node.value = val ?? "";
         });
 
-        // [invoiceDays] normalize after applying fields
         applyInvoiceDaysToFormValue(fields.invoiceDays);
 
         setItems((p.items || []).map(normalizeItem));
         deps.renderItems();
         recalcTotalsUI();
-		recalcAllRowsUI();
-        document.getElementById("paymentMethod")
-          ?.dispatchEvent(new Event("change"));
-        document.getElementById("shippingNet")
-          ?.dispatchEvent(new Event("input"));
+        recalcAllRowsUI();
+
+        document.getElementById("paymentMethod")?.dispatchEvent(new Event("change"));
+        document.getElementById("shippingNet")?.dispatchEvent(new Event("input"));
 
         scheduleAutosave(autosaveActiveOffer);
         showPage("mainPage");
-      }
+      },
     });
 
     el("btnOffers")?.addEventListener("click", async () => {
+      // ✅ ENTERPRISE: pewny zapis ostatniej zmiany (bug "pierwsza zmiana po starcie")
+      try {
+        await commitAndSaveNow({ getItems, getTotals: getTotalsUI });
+      } catch (e) {
+        console.warn("commitAndSaveNow failed:", e);
+        // fallback: chociaż flush
+        try {
+          const ae = document.activeElement;
+          if (ae && typeof ae.blur === "function") ae.blur();
+          await new Promise((r) => setTimeout(r, 0));
+          await flushAutosave();
+        } catch {}
+      }
+
       showPage("offersPage");
       await offersCtl.refresh();
     });
 
-    // Start application at offers list
     showPage("offersPage");
     await offersCtl.refresh();
 
@@ -456,7 +472,7 @@ async function init() {
       const p = await createNewOffer(deps);
       setActiveOffer(p);
 
-  currentOfferId = p?.id || null;
+      currentOfferId = p?.id || null;
       if (el("offerNumberPreview")) {
         el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
       }
@@ -468,9 +484,7 @@ async function init() {
         scheduleAutosave(autosaveActiveOffer);
       });
     });
-
   } else {
-    // Browser mode
     loadStateFromStorage({
       afterApply: () => {
         renderItems({
@@ -505,7 +519,7 @@ function initUpdateToasts() {
   let lastPct = -1;
 
   window.esusAPI.onUpdateAvailable((d) => {
-	if (downloading) return;
+    if (downloading) return;
     const v = d?.version ? ` v${d.version}` : "";
     showToastAction(`Dostępna aktualizacja${v}.`, {
       type: "info",
@@ -520,7 +534,6 @@ function initUpdateToasts() {
           lastPct = -1;
           showToastProgress("Pobieranie aktualizacji…");
           await window.esusAPI.updateDownload();
-          // UI przejdzie do "Uruchom ponownie" po evencie update-downloaded
         } catch (e) {
           downloading = false;
           endToastProgress();
@@ -565,24 +578,23 @@ function initUpdateToasts() {
     showToast("Błąd aktualizacji (szczegóły w konsoli).", { type: "error", ms: 5000 });
   });
 
-  // jeśli update był już pobrany zanim renderer wystartował – pokaż od razu
-  window.esusAPI.updateGetStatus?.().then((st) => {
-    if (st?.downloaded?.version) {
-      const v = ` v${st.downloaded.version}`;
-      showToastAction(`Aktualizacja${v} pobrana.`, {
-        type: "info",
-        ms: 0,
-        actionLabel: "Uruchom ponownie",
-        secondaryLabel: "Później",
-        onSecondary: async () => {},
-        onAction: async () => window.esusAPI.updateQuitAndInstall(),
-      });
-    }
-  }).catch(() => {});
+  window.esusAPI.updateGetStatus?.()
+    .then((st) => {
+      if (st?.downloaded?.version) {
+        const v = ` v${st.downloaded.version}`;
+        showToastAction(`Aktualizacja${v} pobrana.`, {
+          type: "info",
+          ms: 0,
+          actionLabel: "Uruchom ponownie",
+          secondaryLabel: "Później",
+          onSecondary: async () => {},
+          onAction: async () => window.esusAPI.updateQuitAndInstall(),
+        });
+      }
+    })
+    .catch(() => {});
 }
 
-
-// Jeśli usunięto ofertę, którą mamy "w pamięci" do powrotu, ukryj przycisk Powrót
 window.addEventListener("esus:offerDeleted", (ev) => {
   const deletedId = ev?.detail?.id || null;
   if (!deletedId) return;
@@ -598,16 +610,14 @@ window.addEventListener("esus:offerDeleted", (ev) => {
 
 initUpdateToasts();
 
-
 // ===== Currency dropdown (PLN/USD/EUR) – UI only =====
 (function initCurrencyDropdown() {
-  let activePortal = null; // { menu, btn, wrap, placeholder }
+  let activePortal = null;
 
   function positionPortal(menu, btn) {
     const r = btn.getBoundingClientRect();
     const gap = 6;
 
-    // prawa krawędź menu równo z prawą krawędzią przycisku
     const menuWidth = menu.getBoundingClientRect().width || 120;
     const left = Math.max(8, Math.min(window.innerWidth - menuWidth - 8, r.right - menuWidth));
     const top = Math.min(window.innerHeight - 8, r.bottom + gap);
@@ -617,7 +627,6 @@ initUpdateToasts();
   }
 
   function closeAllMenus() {
-    // zamknij normalne
     document.querySelectorAll(".js-ccyMenu.is-open").forEach((m) => {
       m.classList.remove("is-open");
       m.setAttribute("aria-hidden", "true");
@@ -627,7 +636,6 @@ initUpdateToasts();
       b.setAttribute("aria-expanded", "false");
     });
 
-    // zamknij portal (jeśli aktywny)
     if (activePortal) {
       const { menu, placeholder, wrap, btn } = activePortal;
 
@@ -635,7 +643,6 @@ initUpdateToasts();
       menu.classList.remove("is-portal");
       menu.setAttribute("aria-hidden", "true");
 
-      // wróć menu na miejsce w DOM
       if (placeholder && placeholder.parentNode) {
         placeholder.replaceWith(menu);
       }
@@ -647,22 +654,21 @@ initUpdateToasts();
     }
   }
 
-	document.getElementById("offerVat")?.addEventListener("change", () => {
-        recalcAllRowsUI();
-		recalcTotalsUI?.();
-	});
+  document.getElementById("offerVat")?.addEventListener("change", () => {
+    recalcAllRowsUI();
+    recalcTotalsUI?.();
+  });
 
-	document.getElementById("offerCurrency")?.addEventListener("change", (e) => {
-	  changeOfferCurrency(e.target.value);
-	  renderItems({ onTotalsChanged: recalcTotalsUI }); // jak masz
-	  recalcTotalsUI();
-	});
+  document.getElementById("offerCurrency")?.addEventListener("change", (e) => {
+    changeOfferCurrency(e.target.value);
+    renderItems({ onTotalsChanged: recalcTotalsUI });
+    recalcTotalsUI();
+  });
 
   document.addEventListener("click", (e) => {
     const btn = e.target.closest(".js-ccyBtn");
     const opt = e.target.closest(".ccyOpt");
 
-    // Klik w opcję waluty
     if (opt) {
       const wrap = opt.closest(".input-money");
       const ccyBtn = wrap?.querySelector(".js-ccyBtn");
@@ -680,17 +686,15 @@ initUpdateToasts();
       return;
     }
 
-    // Klik w przycisk waluty – toggle menu
     if (btn) {
       const wrap = btn.closest(".input-money");
       const menu = wrap?.querySelector(".js-ccyMenu");
       if (!wrap || !menu) return;
 
-      const isOpen = activePortal?.btn === btn; // ten sam dropdown otwarty?
+      const isOpen = activePortal?.btn === btn;
       closeAllMenus();
 
       if (!isOpen) {
-        // portal: wstaw placeholder, przenieś menu do body
         const placeholder = document.createElement("span");
         placeholder.style.display = "none";
         menu.before(placeholder);
@@ -702,7 +706,6 @@ initUpdateToasts();
         btn.setAttribute("aria-expanded", "true");
         wrap.classList.add("ccy-open");
 
-        // pozycjonowanie po renderze
         requestAnimationFrame(() => positionPortal(menu, btn));
 
         activePortal = { menu, btn, wrap, placeholder };
@@ -712,19 +715,21 @@ initUpdateToasts();
       return;
     }
 
-    // Klik poza – zamknij
     closeAllMenus();
 
-    window.addEventListener("scroll", () => {
-      if (activePortal) positionPortal(activePortal.menu, activePortal.btn);
-    }, true); // true = łapie scroll na dowolnym kontenerze
+    window.addEventListener(
+      "scroll",
+      () => {
+        if (activePortal) positionPortal(activePortal.menu, activePortal.btn);
+      },
+      true
+    );
 
     window.addEventListener("resize", () => {
       if (activePortal) positionPortal(activePortal.menu, activePortal.btn);
     });
   });
 
-  // ESC zamyka
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeAllMenus();
   });

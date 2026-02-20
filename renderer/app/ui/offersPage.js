@@ -3,7 +3,6 @@ import { VAT_RATE } from "../config/constants.js";
 import { itemNetAfterDiscount } from "../calc/pricing.js";
 import { showToast, showToastAction } from "../ui/toast.js";
 
-
 function pickOfferNo(row) {
   return (
     row?.meta?.offerNo ||
@@ -58,6 +57,12 @@ function pickUpdated(row) {
     return "—";
   }
 }
+
+// ✅ preferuj row.offerCcy (z payloadu) przed meta.offerCcy (z indexu)
+function pickOfferCcy(row) {
+  return String(row?.offerCcy || row?.meta?.offerCcy || "PLN").toUpperCase();
+}
+
 function pickGross(row) {
   const v =
     row?.gross ??
@@ -66,14 +71,14 @@ function pickGross(row) {
     row?.meta?.totalGross ??
     row?.meta?.gross ??
     row?.totals?.gross ??
-    row?.gross ??
-    row?.meta?.gross ??
     row?.sumGross ??
     row?.totalGross;
 
   const n = Number(v);
-  return Number.isFinite(n) ? money(n) : "—";
+  const ccy = pickOfferCcy(row);
+  return Number.isFinite(n) ? money(n, ccy) : "—";
 }
+
 function cloneTopbarHeader() {
   const offersPage = document.getElementById("offersPage");
   if (!offersPage) return;
@@ -81,7 +86,6 @@ function cloneTopbarHeader() {
   const already = offersPage.querySelector("[data-offers-cloned='1']");
   if (already) return;
 
-  // próbujemy znaleźć topbar/header w głównym formularzu
   const topbar = document.getElementById("topbar") || document.querySelector("[data-role='topbar']");
   const header = document.getElementById("header") || document.querySelector("[data-role='header']");
   if (!topbar && !header) return;
@@ -91,16 +95,11 @@ function cloneTopbarHeader() {
 
   const safeClone = (node) => {
     const c = node.cloneNode(true);
-
-    // ✅ klucz: usuń ID z całego poddrzewa (żeby getElementById nie wariował)
     c.removeAttribute("id");
     c.querySelectorAll("[id]").forEach((n) => n.removeAttribute("id"));
-
-    // opcjonalnie: wyłącz wszystkie inputy w sklonowanym nagłówku (żeby nie triggerowały eventów)
     c.querySelectorAll("input, select, textarea").forEach((n) => {
       n.disabled = true;
     });
-
     return c;
   };
 
@@ -110,11 +109,8 @@ function cloneTopbarHeader() {
   offersPage.prepend(wrap);
 }
 
-
 function qs(id) { return document.getElementById(id); }
-
 function setCount(n) { qs("offersCount").textContent = String(n); }
-
 function setEmpty(isEmpty) { qs("offersEmpty").style.display = isEmpty ? "block" : "none"; }
 
 function renderRows(rows, { onOpen, onDuplicate, onDelete }) {
@@ -131,7 +127,10 @@ function renderRows(rows, { onOpen, onDuplicate, onDelete }) {
   setCount(rows.length);
 
   for (const row of rows) {
-    const rowId = row?.id || row?.key || row?.offerId || row?.offerUID || row?.offerUuid || row?.meta?.id || row?.meta?.offerId || null;
+    const rowId =
+      row?.id || row?.key || row?.offerId || row?.offerUID || row?.offerUuid ||
+      row?.meta?.id || row?.meta?.offerId || null;
+
     const offerNo = escapeHtml(pickOfferNo(row));
     const client = escapeHtml(pickClient(row));
     const updated = escapeHtml(pickUpdated(row));
@@ -181,8 +180,6 @@ async function offersOpen(id) {
 }
 
 async function enrichOffers(list) {
-  // offers:list zwraca skrócony index (id/offerNo/client/updatedAt) bez sum.
-  // Dociągamy payload dla każdej oferty i uzupełniamy klienta oraz kwoty.
   const rows = Array.isArray(list) ? list.slice() : [];
   const concurrency = 4;
   let idx = 0;
@@ -196,27 +193,36 @@ async function enrichOffers(list) {
 
       try {
         const p = await offersOpen(id);
+
+        // ✅ ZAWSZE nadpisz walutę (i na root i w meta), bo index często ma PLN
+        const ccy = String(p?.meta?.offerCcy || r?.offerCcy || r?.meta?.offerCcy || "PLN").toUpperCase();
+        r.offerCcy = ccy;
+        r.meta = { ...(r.meta || {}), offerCcy: ccy };
+
         // client
         if (!r.client) r.client = p?.fields?.custName || p?.meta?.client || p?.client || "";
-        // totals (nie ufamy 100% zapisanym totals — w razie braku lub rozjazdu liczymy z items)
+
+        // totals
         const grossSaved = p?.totals?.gross ?? p?.totals?.sumGross ?? p?.totals?.totalGross;
         const netSaved = p?.totals?.net ?? p?.totals?.sumNet ?? p?.totals?.totalNet;
 
         const calc = computeTotalsFromPayload(p);
-        // jeśli oferta nie ma pozycji, użyj zapisanych totals
         const hasItems = Array.isArray(p?.items) && p.items.length > 0;
+
         if (hasItems) {
           r.gross = calc.gross;
           r.net = calc.net;
         } else {
           if (grossSaved != null) r.gross = grossSaved;
           if (netSaved != null) r.net = netSaved;
-        }// offerNo
+        }
+
+        // offerNo
         r.offerNo = r.offerNo && r.offerNo !== "—" ? r.offerNo : (p?.meta?.offerNo || p?.offerNo || r.offerNo);
+
         // updatedAt
         r.updatedAt = r.updatedAt || p?.meta?.updatedAt || p?.meta?.createdAt || "";
       } catch (e) {
-        // ignore per-row errors
         console.warn("enrich offer failed", id, e);
       }
     }
@@ -228,17 +234,14 @@ async function enrichOffers(list) {
 }
 
 async function loadOffers() {
-  // API (preload.js) exposes flat methods: offersList/offersOpen/offersDelete/offersDuplicate
   if (!window.esusAPI) throw new Error("Brak window.esusAPI (preload)");
   let list;
   if (typeof window.esusAPI.offersList === "function") list = await window.esusAPI.offersList();
   else if (window.esusAPI.offers && typeof window.esusAPI.offers.list === "function") list = await window.esusAPI.offers.list();
   else throw new Error("Brak metody offersList()");
 
-  // uzupełnij klienta i kwoty (brutto/netto) na podstawie pełnego payloadu
   return await enrichOffers(list);
 }
-
 
 export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}) {
   const searchEl = qs("offersSearch");
@@ -271,7 +274,7 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
         try {
           const offer = await offersOpen(id);
           await onOpenOfferLoaded?.(offer);
-          onBack?.(); // wróć do głównego ekranu po otwarciu
+          onBack?.();
         } catch (e) {
           console.error(e);
           showToast("Nie udało się otworzyć oferty. Sprawdź konsolę.", { type: "error", ms: 3500 });
@@ -311,10 +314,7 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
           onAction: async () => {
             try {
               await window.esusAPI.offersDelete(id);
-
-              // Powiadom główny widok, że usunięto ofertę (żeby ukryć "Powrót" jeśli trzeba)
               window.dispatchEvent(new CustomEvent("esus:offerDeleted", { detail: { id } }));
-
               await refresh();
               showToast("Oferta usunięta.", { type: "info", ms: 2500 });
             } catch (e) {
