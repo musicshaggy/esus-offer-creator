@@ -18,7 +18,7 @@ import {
   getDocLabel,
   formatPaymentText,
   getFilePrefix,
-  getCompanyFooterLines
+  getCompanyFooterLines,
 } from "../i18n/pdfI18n.js";
 
 async function arrayBufferToBase64(buffer) {
@@ -34,7 +34,6 @@ async function arrayBufferToBase64(buffer) {
 function labelNoColon(lang, key) {
   return String(t(lang, key) || "").replace(/\s*:\s*$/, "");
 }
-
 
 async function fetchTtfAsBase64(url) {
   const res = await fetch(url, { cache: "force-cache" });
@@ -99,10 +98,7 @@ function formatCustomerBlock(lang) {
   const contact = v("custContact");
 
   if (name) lines.push(name);
-  if (nip) {
-    // zostawiamy PL "NIP:" jako stałe – jeśli chcesz, dodaj osobne klucze w i18n
-    lines.push(`NIP: ${nip}`);
-  }
+  if (nip) lines.push(`NIP: ${nip}`);
   if (addr) lines.push(addr);
   if (contact) lines.push(contact);
 
@@ -123,7 +119,6 @@ function formatCreatorBlock(lang) {
 }
 
 /* ===== Warranty helpers (PDF) ===== */
-// na razie PL-only (bo tak wymagałeś), ale można rozbudować w pdfI18n.js
 function pluralizeMonthsPL(n) {
   const x = Math.abs(Number(n) || 0);
   const mod10 = x % 10;
@@ -146,6 +141,139 @@ function getWarrantyParts(it) {
   return { nbd, monthsText };
 }
 
+/* ===== ESUS summary footer (enterprise) ===== */
+const ESUS_BLUE = [0, 154, 255];
+
+function pdfSafeText(v) {
+  return String(v ?? "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/[\u00A0\u202F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function drawEsusTotalsBars(doc, {
+  x,
+  y,
+  w,
+  lang,
+  fontName,
+  offerCcy,
+  vat,
+  sumNet,
+  sumVat,
+  sumGross,
+  shippingNet,
+}) {
+  // Enterprise "card footer" (nie zlewa się z tabelą)
+  const cardH = 12;
+  const accentH = 2;
+
+  // Shipping "pill" po prawej
+  const shippingH = 9;
+
+  // Delikatny odstęp od tabeli + divider (żeby się nie zlewało)
+  const dividerH = 1.2;
+  doc.setDrawColor(220, 228, 238);
+  doc.setLineWidth(0.2);
+  doc.line(x, y, x + w, y);
+  y += dividerH;
+
+  // CARD background
+  doc.setFillColor(243, 246, 250);
+  doc.rect(x, y, w, cardH, "F");
+
+  // Accent top line
+  doc.setFillColor(...ESUS_BLUE);
+  doc.rect(x, y, w, accentH, "F");
+
+  // Card border
+  doc.setDrawColor(220, 228, 238);
+  doc.setLineWidth(0.2);
+  doc.rect(x, y, w, cardH);
+
+  const segW = w / 3;
+  const baseY = y + 8.2;
+
+  // Labels
+  const netLbl = pdfSafeText(String(t(lang, "sumNet") || "Suma netto").replace(/\s*:\s*$/, ""));
+  const vatLbl = pdfSafeText(
+    `${String(t(lang, "vat") || "VAT").replace(/\s*:\s*$/, "")} ${vatLabelI18n(lang, vat)}`.trim()
+  );
+  const grossLbl = pdfSafeText(String(t(lang, "sumGross") || "Suma brutto").replace(/\s*:\s*$/, ""));
+
+  // Values
+  const netStr = pdfSafeText(formatMoney(sumNet, lang, offerCcy));
+  const vatStr = pdfSafeText(formatMoney(sumVat, lang, offerCcy));
+  const grossStr = pdfSafeText(formatMoney(sumGross, lang, offerCcy));
+
+  // Text colors: enterprise dark
+  doc.setTextColor(25, 35, 45);
+
+  // seg 1
+  doc.setFont(fontName, "normal"); doc.setFontSize(8);
+  doc.text(netLbl, x + 4, baseY);
+  doc.setFont(fontName, "bold"); doc.setFontSize(9);
+  doc.text(netStr, x + segW - 4, baseY, { align: "right" });
+
+  // seg 2
+  doc.setFont(fontName, "normal"); doc.setFontSize(8);
+  doc.text(vatLbl, x + segW + 4, baseY);
+  doc.setFont(fontName, "bold"); doc.setFontSize(9);
+  doc.text(vatStr, x + 2 * segW - 4, baseY, { align: "right" });
+
+  // seg 3
+  doc.setFont(fontName, "normal"); doc.setFontSize(8);
+  doc.text(grossLbl, x + 2 * segW + 4, baseY);
+  doc.setFont(fontName, "bold"); doc.setFontSize(9);
+  doc.text(grossStr, x + w - 4, baseY, { align: "right" });
+
+  // ===== SHIPPING pill (right, under card) =====
+  const y2 = y + cardH; // doklejone pionowo
+
+  const shipLabel = pdfSafeText(String(t(lang, "delivery") || "Dostawa").replace(/\s*:\s*$/, ""));
+  const shipNetNum = Number(shippingNet || 0);
+  const shipValue =
+    shipNetNum === 0
+      ? pdfSafeText(t(lang, "deliverySellerCost") || "—")
+      : pdfSafeText(formatMoney(shipNetNum, lang, offerCcy));
+
+  const padL = 4, padR = 4, gap = 4;
+
+  doc.setFont(fontName, "normal"); doc.setFontSize(8);
+  const labelW = doc.getTextWidth(shipLabel);
+
+  doc.setFont(fontName, "bold"); doc.setFontSize(9);
+  const valueW = doc.getTextWidth(shipValue);
+
+  const minShipW = padL + labelW + gap + valueW + padR;
+
+  // ~22% bazowo, rośnie jeśli trzeba; max 55% (żeby zawsze się zmieściło)
+  let shipW = Math.min(w * 0.55, Math.max(w * 0.22, Math.max(40, minShipW)));
+  shipW = Math.min(shipW, w);
+  const shipX = x + (w - shipW);
+
+  // pill background
+  doc.setFillColor(...ESUS_BLUE);
+  doc.rect(shipX, y2, shipW, shippingH, "F");
+
+  // pill text
+  doc.setTextColor(255, 255, 255);
+  const shipY = y2 + 6.0;
+
+  doc.setFont(fontName, "normal");
+  doc.setFontSize(8);
+  doc.text(shipLabel, shipX + padL, shipY);
+
+  doc.setFont(fontName, "bold");
+  doc.setFontSize(9);
+  doc.text(shipValue, shipX + shipW - padR, shipY, { align: "right" });
+
+  // restore
+  doc.setTextColor(0);
+  return y2 + shippingH;
+}
+
 export async function generatePdf({ onBefore } = {}) {
   onBefore?.();
 
@@ -154,10 +282,10 @@ export async function generatePdf({ onBefore } = {}) {
   const DOC_CCY = getDocCurrency();
 
   if (store.items.length === 0) {
-    showToast(t(lang, "missingData") === "(missing)" ? "Add at least one item." : "Dodaj przynajmniej jedną pozycję.", {
-      type: "error",
-      ms: 3500,
-    });
+    showToast(
+      t(lang, "missingData") === "(missing)" ? "Add at least one item." : "Dodaj przynajmniej jedną pozycję.",
+      { type: "error", ms: 3500 }
+    );
     return;
   }
 
@@ -298,7 +426,6 @@ export async function generatePdf({ onBefore } = {}) {
   // ===== Table =====
   const showDiscountCol = !!el("showDiscountColumnPdf").checked;
 
-  // VAT między NET i BRUTTO
   const head = getTableHead(lang, {
     showDiscountCol,
     includeVatCol: true,
@@ -316,11 +443,10 @@ export async function generatePdf({ onBefore } = {}) {
     const warranty = getWarrantyParts(it);
     const descCell = warranty ? `${it.desc || "-"}\n\u200B` : (it.desc || "-");
 
-    // kolejność: Lp, Opis, Netto, (Rabat?), VAT, Brutto, Ilość, Wartość
     const row = [
       String(idx + 1),
       descCell,
-      formatMoney(netAfter, lang, DOC_CCY).replace(/\s?[A-Z]{3}$/i, "").trim(), // w tabeli trzymamy „liczbę”, bez symbolu
+      formatMoney(netAfter, lang, DOC_CCY).replace(/\s?[A-Z]{3}$/i, "").trim(),
     ];
 
     if (showDiscountCol) {
@@ -340,14 +466,6 @@ export async function generatePdf({ onBefore } = {}) {
 
   const baseTableFont = 9;
   const warrantyFont = Math.max(6, Math.round(baseTableFont * 0.8));
-
-  // kolumny zależne od showDiscountCol
-  // indexy:
-  // 0 Lp
-  // 1 Opis
-  // 2 Netto
-  // 3 (Rabat?) albo VAT
-  // 4 VAT albo Brutto
   const VAT_COL_INDEX = showDiscountCol ? 4 : 3;
 
   doc.autoTable({
@@ -367,15 +485,12 @@ export async function generatePdf({ onBefore } = {}) {
       fontSize: baseTableFont,
       cellPadding: 2.2,
     },
-
-    // ✅ zwęż opis minimalnie i daj VAT trochę szerzej, żeby "23%" się mieściło
     columnStyles: {
-      0: { cellWidth: 10, halign: "center" }, // Lp
-      1: { cellWidth: showDiscountCol ? 62 : 70 }, // Opis (lekko węższe niż było)
-      [VAT_COL_INDEX]: { cellWidth: 14, halign: "center" }, // VAT (trochę szerzej niż 12)
+      0: { cellWidth: 10, halign: "center" },
+      1: { cellWidth: showDiscountCol ? 62 : 70 },
+      [VAT_COL_INDEX]: { cellWidth: 14, halign: "center" },
     },
 
-    // Warranty drawing (Opis = index 1)
     didDrawCell: (data) => {
       if (data.section !== "body") return;
       if (data.column.index !== 1) return;
@@ -403,7 +518,6 @@ export async function generatePdf({ onBefore } = {}) {
         x += doc.getTextWidth(txt);
       };
 
-      // na razie PL etykieta gwarancji – jeśli chcesz, dodamy do i18n
       write("Gwarancja ", false);
       if (w.nbd) write("NBD ", true);
       write(w.monthsText, true);
@@ -413,9 +527,7 @@ export async function generatePdf({ onBefore } = {}) {
     },
   });
 
-  const afterTableY = doc.lastAutoTable.finalY + 6;
-
-  // ===== Summary =====
+  // ===== ESUS Summary footer (enterprise) =====
   const sumNet = store.items.reduce(
     (acc, it) => acc + itemNetAfterDiscount(it) * Math.max(1, parseInt(it.qty || 1, 10)),
     0
@@ -424,55 +536,45 @@ export async function generatePdf({ onBefore } = {}) {
   const sumGross = sumNet + sumVat;
 
   const shipNet = toNumber(el("shippingNet").value);
-  const shipGross = shipNet * (1 + VAT_RATE);
 
-  doc.setFont(fontName, "bold");
-  doc.setFontSize(11);
-  doc.text(t(lang, "summary"), margin, afterTableY);
+  const at = doc.lastAutoTable;
 
-  doc.setFont(fontName, "normal");
-  doc.setFontSize(10);
-  const sumBlockY = afterTableY + 6;
+  // ✅ dokładnie jak tabela, ale bezpiecznie przycięte do marginesów strony
+  const tableX0 = at?.table?.startX ?? at?.settings?.margin?.left ?? margin;
+  const maxRight = pageW - margin;
+  const tableEndX = at?.table?.endX ?? (tableX0 + (at?.table?.width ?? (pageW - margin * 2)));
+  const tableX = Math.max(margin, tableX0);
+  const tableW = Math.max(20, Math.min(tableEndX, maxRight) - tableX);
 
-  doc.text(`${t(lang, "sumNet")}: ${formatMoney(sumNet, lang, DOC_CCY)}`, margin, sumBlockY);
-  doc.text(
-    `${t(lang, "vat")} ${vatLabelI18n(lang, vat)}: ${formatMoney(sumVat, lang, DOC_CCY)}`,
-    margin,
-    sumBlockY + 5
-  );
+  // doklejone do tabeli (bez odstępu) – divider w funkcji
+  let barsY = (at?.finalY ?? 0);
 
-  doc.setFont(fontName, "bold");
-  doc.text(`${t(lang, "sumGross")}: ${formatMoney(sumGross, lang, DOC_CCY)}`, margin, sumBlockY + 10);
-  doc.setFont(fontName, "normal");
-
-  if (shipNet === 0) {
-    doc.text(`${t(lang, "delivery")}: ${t(lang, "deliverySellerCost")}`, pageW - margin, sumBlockY, {
-      align: "right",
-    });
-  } else {
-    doc.text(`${t(lang, "shippingNet")}: ${formatMoney(shipNet, lang, DOC_CCY)}`, pageW - margin, sumBlockY, {
-      align: "right",
-    });
-    doc.text(
-      `${t(lang, "shippingGross")}: ${formatMoney(shipGross, lang, DOC_CCY)}`,
-      pageW - margin,
-      sumBlockY + 5,
-      { align: "right" }
-    );
+  // reserve: divider+card+shipping+oddech na terms
+  if (ensureSpace(1.2 + 12 + 9 + 10, barsY)) {
+    barsY = margin + 20;
   }
 
-  // Line
-  const lineY = sumBlockY + 16;
-  doc.setDrawColor(0, 154, 255);
-  doc.setLineWidth(1.2);
-  doc.line(margin, lineY, pageW - margin, lineY);
+  const barsBottomY = drawEsusTotalsBars(doc, {
+    x: tableX,
+    y: barsY,
+    w: tableW,
+    lang,
+    fontName,
+    offerCcy: DOC_CCY,
+    vat,
+    sumNet,
+    sumVat,
+    sumGross,
+    shippingNet: shipNet,
+  });
 
   // ===== Terms =====
-  let termsY = lineY + 8;
+  let termsY = barsBottomY + 8;
   if (ensureSpace(45, termsY)) termsY = margin + 20;
 
   doc.setFont(fontName, "bold");
   doc.setFontSize(11);
+  doc.setTextColor(0);
   doc.text(t(lang, "terms"), margin, termsY);
 
   doc.setFont(fontName, "normal");
@@ -489,13 +591,12 @@ export async function generatePdf({ onBefore } = {}) {
 
   let ty = termsY + 6;
 
-	const termLines = [
-	  `${labelNoColon(lang, "payment")}: ${payText}`,
-	  shipNet === 0
-		? `${labelNoColon(lang, "delivery")}: ${t(lang, "deliverySellerCost")}`
-		: `${labelNoColon(lang, "delivery")}: ${t(lang, "shippingNet")} (${formatMoney(shipNet, lang, DOC_CCY)})`,
-	];
-
+  const termLines = [
+    `${labelNoColon(lang, "payment")}: ${payText}`,
+    shipNet === 0
+      ? `${labelNoColon(lang, "delivery")}: ${t(lang, "deliverySellerCost")}`
+      : `${labelNoColon(lang, "delivery")}: ${t(lang, "shippingNet")} (${formatMoney(shipNet, lang, DOC_CCY)})`,
+  ];
 
   termLines.forEach((line) => {
     doc.text(line, margin, ty);
@@ -552,66 +653,58 @@ export async function generatePdf({ onBefore } = {}) {
     ty = boxY + boxH;
   }
 
-	// ===== Footer =====
-	const footerMargin = margin;
+  // ===== Footer =====
+  const footerMargin = margin;
 
-	doc.setFont(fontName, "normal");
-	doc.setFontSize(7.5);
-	doc.setTextColor(120);
+  doc.setFont(fontName, "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(120);
 
-	const footerOffset = 6; // 4–8 mm zwykle wygląda dobrze
+  const footerOffset = 6;
+  let footerY = pageH - footerMargin + footerOffset;
 
-let footerY = pageH - footerMargin + footerOffset;
+  if ((lang || "pl").toLowerCase() === "pl") {
+    const companyFooter =
+      "ESUS IT Spółka z o. o., ul. Somosierry 30A, 71-181 Szczecin. " +
+      "Sąd Rejonowy dla miasta Szczecina, VII Wydział Gospodarczy Krajowego Rejestru Sądowego, " +
+      "KRS: 0001012470; VAT No / NIP: PL8522690002; REGON: 524134686; " +
+      "Kapitał zakładowy 5 000 zł.";
 
-	// PL: zostaje jak było (jeden akapit + split)
-	if ((lang || "pl").toLowerCase() === "pl") {
-	  const companyFooter =
-		"ESUS IT Spółka z o. o., ul. Somosierry 30A, 71-181 Szczecin. " +
-		"Sąd Rejonowy dla miasta Szczecina, VII Wydział Gospodarczy Krajowego Rejestru Sądowego, " +
-		"KRS: 0001012470; VAT No / NIP: PL8522690002; REGON: 524134686; " +
-		"Kapitał zakładowy 5 000 zł.";
+    const companyLines = doc.splitTextToSize(companyFooter, pageW - footerMargin * 2);
+    for (let i = companyLines.length - 1; i >= 0; i--) {
+      doc.text(companyLines[i], pageW / 2, footerY, { align: "center" });
+      footerY -= 3.6;
+    }
+  } else {
+    const lines = getCompanyFooterLines(lang) || [];
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = String(lines[i] ?? "");
+      if (!line.trim()) {
+        footerY -= 3;
+        continue;
+      }
+      doc.text(line, pageW / 2, footerY, { align: "center" });
+      footerY -= 3.6;
+    }
+  }
 
-	  const companyLines = doc.splitTextToSize(companyFooter, pageW - footerMargin * 2);
-	  for (let i = companyLines.length - 1; i >= 0; i--) {
-		doc.text(companyLines[i], pageW / 2, footerY, { align: "center" });
-		footerY -= 3.6;
-	  }
-	} else {
-	  // EN/DE/HU: stopka jako linie (z pdfI18n.js)
-	  const lines = getCompanyFooterLines(lang) || [];
+  if (isEstimate) {
+    doc.setFontSize(8);
+    doc.setTextColor(110);
 
-	  for (let i = lines.length - 1; i >= 0; i--) {
-		const line = String(lines[i] ?? "");
-		if (!line.trim()) {
-		  footerY -= 3; // odstęp dla pustej linii
-		  continue;
-		}
-		doc.text(line, pageW / 2, footerY, { align: "center" });
-		footerY -= 3.6;
-	  }
-	}
+    const estimateLines = doc.splitTextToSize(
+      t(lang, "estimateDisclaimer"),
+      pageW - footerMargin * 2
+    );
 
-	// Disclaimer dla "wyceny szacunkowej"
-	if (isEstimate) {
-	  doc.setFontSize(8);
-	  doc.setTextColor(110);
+    for (let i = estimateLines.length - 1; i >= 0; i--) {
+      footerY -= 4;
+      doc.text(estimateLines[i], pageW / 2, footerY, { align: "center" });
+    }
+  }
 
-	  const estimateLines = doc.splitTextToSize(
-		t(lang, "estimateDisclaimer"),
-		pageW - footerMargin * 2
-	  );
+  doc.setTextColor(0);
 
-	  // rysujemy od dołu, ale ZAWSZE z zachowaniem odstępu od stopki firmy
-	  for (let i = estimateLines.length - 1; i >= 0; i--) {
-		footerY -= 4;
-		doc.text(estimateLines[i], pageW / 2, footerY, { align: "center" });
-	  }
-	}
-
-	doc.setTextColor(0);
-
-	// Nazwa pliku (i18n prefix)
-	const prefix = getFilePrefix(lang);
-	doc.save(`${prefix}_${offerNo.replaceAll("/", "-")}.pdf`);
-
+  const prefix = getFilePrefix(lang);
+  doc.save(`${prefix}_${offerNo.replaceAll("/", "-")}.pdf`);
 }
