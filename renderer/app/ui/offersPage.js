@@ -58,7 +58,6 @@ function pickUpdated(row) {
   }
 }
 
-// ✅ preferuj row.offerCcy (z payloadu) przed meta.offerCcy (z indexu)
 function pickOfferCcy(row) {
   return String(row?.offerCcy || row?.meta?.offerCcy || "PLN").toUpperCase();
 }
@@ -158,6 +157,33 @@ function renderRows(rows, { onOpen, onDuplicate, onDelete }) {
   }
 }
 
+// ✅ NEW: wyciągnij stawkę VAT z payloadu oferty (meta/fields)
+function getVatRateFromPayload(p) {
+  // ✅ NAJPIERW fields (to jest realny wybór z UI zapisany autosave)
+  const raw =
+    p?.fields?.offerVat ??
+    p?.fields?.offerVatCode ??
+    p?.fields?.vatCode ??
+    p?.meta?.vatCode ??
+    p?.vatCode ??
+    p?.meta?.vat?.code ??
+    null;
+
+  if (raw == null) return VAT_RATE;
+
+  const s = String(raw).trim().toUpperCase();
+
+  // 0% (WDT/EX lub label typu "0% (WDT)")
+  if (s.includes("WDT")) return 0;
+  if (s === "EX" || s.includes("0EX")) return 0;
+  if (s.startsWith("0")) return 0; // "0", "0%", "0_WDT", "0_EX", itd.
+
+  const num = parseInt(s.replace("%", ""), 10);
+  if (Number.isFinite(num)) return num / 100;
+
+  return VAT_RATE;
+}
+
 function computeTotalsFromPayload(p) {
   const items = Array.isArray(p?.items) ? p.items : [];
   const sumNet = items.reduce((acc, it) => {
@@ -167,7 +193,9 @@ function computeTotalsFromPayload(p) {
 
   const shipNet = toNumber(p?.fields?.shippingNet ?? p?.fields?.shipNet ?? p?.meta?.shippingNet ?? 0);
   const netTotal = sumNet + shipNet;
-  const grossTotal = netTotal * (1 + VAT_RATE);
+
+  const vatRate = getVatRateFromPayload(p);   // ✅ TU
+  const grossTotal = netTotal * (1 + vatRate);
 
   return { net: netTotal, gross: grossTotal };
 }
@@ -194,7 +222,7 @@ async function enrichOffers(list) {
       try {
         const p = await offersOpen(id);
 
-        // ✅ ZAWSZE nadpisz walutę (i na root i w meta), bo index często ma PLN
+        // waluta oferty (żeby lista nie spadała do PLN)
         const ccy = String(p?.meta?.offerCcy || r?.offerCcy || r?.meta?.offerCcy || "PLN").toUpperCase();
         r.offerCcy = ccy;
         r.meta = { ...(r.meta || {}), offerCcy: ccy };
@@ -207,9 +235,10 @@ async function enrichOffers(list) {
         const netSaved = p?.totals?.net ?? p?.totals?.sumNet ?? p?.totals?.totalNet;
 
         const calc = computeTotalsFromPayload(p);
-        const hasItems = Array.isArray(p?.items) && p.items.length > 0;
 
+        const hasItems = Array.isArray(p?.items) && p.items.length > 0;
         if (hasItems) {
+          // ✅ teraz brutto liczy się wg stawki VAT oferty (w tym 0%)
           r.gross = calc.gross;
           r.net = calc.net;
         } else {

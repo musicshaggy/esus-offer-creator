@@ -261,20 +261,27 @@ export function formatDate(ymd, lang) {
  */
 export function vatLabel(lang, vat) {
   if (!vat) return "";
-  if (typeof vat === "string") return vat;
 
-  // preferuj label z UI, jeśli masz (np. "WDT", "EX", "23%")
-  if (vat.label) return String(vat.label);
+  // jeżeli przekazany string
+  if (typeof vat === "string") {
+    const s = vat.toUpperCase();
+    if (s.includes("WDT")) return "0%";
+    if (s.includes("EX")) return "EX";
+    return s;
+  }
 
   const code = String(vat.code || "").toUpperCase();
-  if (code === "0WDT") return "WDT";
+
+  // 👇 KLUCZOWE: ignorujemy vat.label dla przypadków 0
+  if (code === "0WDT") return "0%";
   if (code === "0EX") return "EX";
 
-  // np. "23" -> "23%"
+  // normalne stawki
   const num = parseInt(code, 10);
   if (Number.isFinite(num)) return `${num}%`;
 
-  return code || "";
+  // fallback
+  return vat.label ? String(vat.label) : "";
 }
 
 /** Nazwa dokumentu zależna od estimate */
