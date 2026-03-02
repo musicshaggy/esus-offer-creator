@@ -35,6 +35,7 @@ export function recalcTotalsUI() {
   setText("sumVatLabel", `Suma VAT ${vat.label}`);
 
   const offerCcy = String(store.offer?.ccy || store.settings?.offerCcy || "PLN").toUpperCase();
+  setText("shippingNetLabel", `Koszt wysyłki NETTO (${offerCcy})`);
 
   // 1) Sprzedaż (offerCcy) + VAT w walucie oferty
   let revenueOffer = 0;
