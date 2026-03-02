@@ -1,9 +1,8 @@
-import { VAT_RATE } from "../config/constants.js";
-import { computeTotals } from "../calc/totals.js";
-import { money, toNumber } from "../utils/format.js";
+import { money, moneyCcy, toNumber } from "../utils/format.js";
 import { store } from "../state/store.js";
-import { getRateToPLN } from "../utils/exchangeRates.js";
 import { itemNetAfterDiscount } from "../calc/pricing.js";
+import { getVatRateFromUI, getVatFromUI } from "../utils/vat.js";
+import { toPLN, fromPLN } from "../utils/currency.js";
 
 let totals = {
   revenueNet: 0,
@@ -19,44 +18,67 @@ function setText(id, value) {
   if (el) el.textContent = value;
 }
 
-function buyNetPLN(it) {
-  const buyNet = Math.max(0, toNumber(it.buyNet));
-  const buyCcy = String(it.buyCcy || "PLN").toUpperCase();
-  const rate = getRateToPLN(buyCcy, store.exchange?.rates);
-  return rate ? buyNet * rate : buyNet; // brak kursu -> traktuj jak PLN
+function moneyWithPLNFromPLN(amountPLN, offerCcy) {
+  const vPLN = Number(amountPLN || 0);
+
+  if (!offerCcy || offerCcy === "PLN") {
+    return money(vPLN, "PLN");
+  }
+
+  const vOffer = fromPLN(vPLN, offerCcy);
+  return `${money(vOffer, offerCcy)} | ${money(vPLN, "PLN")}`;
 }
 
 export function recalcTotalsUI() {
-  // 1) Sumy sprzedażowe (netto/VAT/brutto) zostają jak były
-  const t = computeTotals(store.items, VAT_RATE);
+  const vatRate = getVatRateFromUI();
+  const vat = getVatFromUI();
+  setText("sumVatLabel", `Suma VAT ${vat.label}`);
 
-  // 2) ✅ Wewnętrzne: koszt / zysk / marża liczymy z uwzględnieniem waluty zakupu
-  let revenueNet = 0;
-  let costNet = 0;
+  const offerCcy = String(store.offer?.ccy || store.settings?.offerCcy || "PLN").toUpperCase();
+
+  // 1) Sprzedaż (offerCcy) + VAT w walucie oferty
+  let revenueOffer = 0;
+  let revenuePLN = 0;
+  let costPLN = 0;
 
   for (const it of store.items) {
     const qty = Math.max(1, parseInt(it?.qty || 1, 10));
-    revenueNet += itemNetAfterDiscount(it) * qty;
-    costNet += buyNetPLN(it) * qty;
+    const lineOffer = itemNetAfterDiscount(it) * qty;
+
+    revenueOffer += lineOffer;
+    revenuePLN += toPLN(lineOffer, offerCcy);
+
+    // koszt zawsze sprowadzamy do PLN (buyCcy-aware)
+    const buyNet = Math.max(0, toNumber(it.buyNet));
+    const buyCcy = String(it.buyCcy || "PLN").toUpperCase();
+    costPLN += toPLN(buyNet * qty, buyCcy);
   }
 
-  const profitNet = revenueNet - costNet;
-  const marginPct = revenueNet > 0 ? (profitNet / revenueNet) * 100 : 0;
+  const sumVatOffer = revenueOffer * vatRate;
+  const sumGrossOffer = revenueOffer + sumVatOffer;
 
+  // 2) Wewnętrzne (marża na bazie PLN)
+  const profitPLN = revenuePLN - costPLN;
+  const marginPct = revenuePLN > 0 ? (profitPLN / revenuePLN) * 100 : 0;
+
+  // 3) Dane totals trzymamy spójnie: revenue/VAT/gross w walucie oferty, cost/profit w PLN (bazowe)
   totals = {
-    ...t,
-    revenueNet,
-    costNet,
-    profitNet,
+    revenueNet: revenueOffer,
+    costNet: costPLN,       // PLN
+    profitNet: profitPLN,   // PLN
     marginPct,
+    sumVat: sumVatOffer,
+    sumGross: sumGrossOffer,
   };
 
-  setText("sumNet", money(totals.revenueNet));
-  setText("sumVat", money(totals.sumVat));
-  setText("sumGross", money(totals.sumGross));
+  setText("sumNet", moneyCcy(totals.revenueNet, offerCcy));
+  setText("sumVat", moneyCcy(totals.sumVat, offerCcy));
+  setText("sumGross", moneyCcy(totals.sumGross, offerCcy));
 
-  setText("sumCostNet", money(totals.costNet));
-  setText("sumProfitNet", money(totals.profitNet));
+  // ✅ tylko tutaj: show offerCcy + PLN
+  setText("sumCostNet", moneyWithPLNFromPLN(totals.costNet, offerCcy));
+  setText("sumProfitNet", moneyWithPLNFromPLN(totals.profitNet, offerCcy));
+
   setText(
     "sumMargin",
     totals.marginPct.toLocaleString("pl-PL", { maximumFractionDigits: 2 }) + "%"

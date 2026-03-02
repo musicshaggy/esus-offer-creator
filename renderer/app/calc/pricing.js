@@ -1,6 +1,6 @@
 import { toNumber } from "../utils/format.js";
 import { store } from "../state/store.js";
-import { getRateToPLN } from "../utils/exchangeRates.js";
+import { toPLN, fromPLN } from "../utils/currency.js"; // możesz importować z currency.js
 
 export function itemNetAfterDiscount(it) {
   const disc = Math.min(100, Math.max(0, toNumber(it.discount)));
@@ -10,24 +10,26 @@ export function itemNetAfterDiscount(it) {
 
 export function calcRowProfitAndMargin(it) {
   const qty = Math.max(1, parseInt(it.qty || 1, 10));
-  const sellNetAfter = itemNetAfterDiscount(it);
 
-  const buyNet = Math.max(0, toNumber(it.buyNet));
+  const offerCcy = String(store.offer?.ccy || "PLN").toUpperCase();
+
+  // sprzedaż (waluta oferty)
+  const sellNetAfter = itemNetAfterDiscount(it);           // w walucie oferty
+  const revenueOffer = sellNetAfter * qty;                 // offer ccy
+  const revenuePLN = toPLN(revenueOffer, offerCcy);
+
+  // zakup (waluta pozycji)
+  const buyNet = Math.max(0, toNumber(it.buyNet));         // w buyCcy
   const buyCcy = String(it.buyCcy || "PLN").toUpperCase();
+  const costPLN = toPLN(buyNet * qty, buyCcy);
 
-  // ✅ przeliczenie kosztu zakupu do PLN
-  const rates = store.exchange?.rates;
-  const rate = getRateToPLN(buyCcy, rates);
+  const profitPLN = revenuePLN - costPLN;
 
-  console.log("[PRICING]", { buyNet, buyCcy, rates, rate, sellNetAfter, qty });
-  
-  const buyNetPLN = rate ? (buyNet * rate) : buyNet; // jeśli brak kursu -> traktuj jak PLN
+  // profit pokazujemy w walucie oferty
+  const profitLine = fromPLN(profitPLN, offerCcy);
 
-  const revenueLine = sellNetAfter * qty;
-  const costLine = buyNetPLN * qty;
-
-  const profitLine = revenueLine - costLine;
-  const marginPct = revenueLine > 0 ? (profitLine / revenueLine) * 100 : 0;
+  // marża % liczona logicznie od sprzedaży (niezależna od waluty)
+  const marginPct = revenuePLN > 0 ? (profitPLN / revenuePLN) * 100 : 0;
 
   return { profitLine, marginPct };
 }

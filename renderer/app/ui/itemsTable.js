@@ -3,6 +3,10 @@ import { store, removeItem, updateItem } from "../state/store.js";
 import { itemNetAfterDiscount, calcRowProfitAndMargin } from "../calc/pricing.js";
 import { getRateToPLN } from "../utils/exchangeRates.js";
 
+function offerCcy() {
+  return String(store.offer?.ccy || store.settings?.offerCcy || "PLN").toUpperCase();
+}
+
 /** ===== Tooltip: cena po rabacie (singleton) ===== */
 let _discTipEl = null;
 let _discTipActive = null;
@@ -73,10 +77,11 @@ function showDiscountTipForIndex(i, ev) {
   const qty = Math.max(1, parseInt(it.qty || 1, 10));
   const unitAfter = itemNetAfterDiscount(it);
   const lineAfter = unitAfter * qty;
+  const ccy = offerCcy();
 
   tip.innerHTML =
-    `Cena po rabacie: <b>${money(unitAfter)}</b><br>` +
-    `<span style="opacity:.78">Wartość pozycji (${qty} szt.): ${money(lineAfter)}</span>`;
+    `Cena po rabacie: <b>${money(unitAfter, ccy)}</b><br>` +
+    `<span style="opacity:.78">Wartość pozycji (${qty} szt.): ${money(lineAfter, ccy)}</span>`;
 
   tip.style.display = "block";
   positionTipNearCursor(tip, ev);
@@ -155,8 +160,10 @@ export function updateRowCalcUI(tr, it) {
   const profitEl = tr.querySelector(".js-profitValue");
   const marginEl = tr.querySelector(".js-marginValue");
 
+  const ccy = offerCcy();
+
   if (profitEl) {
-    profitEl.textContent = money(profitLine);
+    profitEl.textContent = money(profitLine, ccy);
     profitEl.classList.toggle("negative", profitLine < 0);
   }
   if (marginEl) {
@@ -311,6 +318,8 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
   const tbody = el("itemsBody");
   if (!tbody) return;
 
+  const ccy = offerCcy();
+
   // warranty toggle: bind once (capture)
   if (!_warrantyToggleBound) {
     tbody.removeEventListener("click", warrantyToggleHandler, true);
@@ -337,7 +346,7 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
 
     // ✅ initial profit/margin must use calcRowProfitAndMargin (currency-aware)
     const { profitLine, marginPct } = calcRowProfitAndMargin(it);
-    const profitText = money(profitLine);
+    const profitText = money(profitLine, ccy);
     const marginText = marginPct.toLocaleString("pl-PL", { maximumFractionDigits: 2 }) + "%";
     const profitClass = profitLine < 0 ? "calcCell negative" : "calcCell";
 
@@ -422,7 +431,7 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
       </td>
 
       <td>
-        <label class="mini">Netto (PLN)</label>
+        <label class="mini">Netto (${ccy})</label>
         <input data-k="net" data-i="${idx}" type="number" min="0" step="0.01" value="${toNumber(it.net)}" />
       </td>
 
