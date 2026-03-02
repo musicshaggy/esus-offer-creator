@@ -404,7 +404,6 @@ ipcMain.handle("offers:duplicate", async (_evt, id) => {
   const src = readJsonSafe(srcPath, null);
   const fresh = await createFreshOfferPayload();
 
-  // ✅ przenieś ustawienia dokumentu (waluta/język/VAT) ze źródłowej oferty
   const srcMeta = src?.meta || {};
   const keepSettingsMeta = {
     offerCcy: srcMeta.offerCcy,
@@ -412,17 +411,24 @@ ipcMain.handle("offers:duplicate", async (_evt, id) => {
     vatCode: srcMeta.vatCode,
   };
 
+  // ✅ FIELDS: skopiuj, ale ustaw ważność na dziś
+  const fields = { ...(src?.fields || {}) };
+  fields.validUntil = todayYMD();
+
+  // (opcjonalnie) jeśli chcesz czyścić "Dodatkowe ustalenia" przy duplikacji, odkomentuj:
+  // fields.termsExtra = "";
+
   const payload = {
     ...fresh,
     meta: normalizeOfferMeta(
       {
-        ...fresh.meta, // zachowaj nowe offerNo/createdAt
-        ...keepSettingsMeta, // ustawienia bierzemy z kopii
+        ...fresh.meta,
+        ...keepSettingsMeta,
         updatedAt: new Date().toISOString(),
       },
       null
     ),
-    fields: src.fields || {},
+    fields,
     items: src.items || [],
     totals: src.totals || null,
   };

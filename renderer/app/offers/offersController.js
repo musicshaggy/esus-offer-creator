@@ -1,5 +1,6 @@
 import { offersService } from "./offersService.js";
 import { store, setOffer, setSettings } from "../state/store.js"; // ✅ DODAJ setOffer, setSettings
+import { todayYMD } from "../utils/format.js";
 
 let autosaveTimer = null;
 let pendingAutosaveFn = null;
@@ -13,6 +14,18 @@ function syncOfferCcyFromPayload(payload) {
 
   // ✅ Jeśli gdzieś jeszcze patrzysz na settings (np. formatowanie), to synchronizuj
   setSettings({ offerCcy: ccy });
+}
+
+function applyNewOfferDefaults(payload) {
+  const p = payload || {};
+  p.fields = p.fields || {};
+
+  // ✅ ważność zawsze na dziś przy NOWEJ
+  p.fields.validUntil = todayYMD();
+
+  // (opcjonalnie) jeżeli wolisz mieć czysto też na poziomie JSON:
+  p.fields.termsExtra = "";
+  return p;
 }
 
 export function setActiveOffer(payload) {
@@ -34,10 +47,11 @@ export async function bootLastOrCreateNew(deps) {
 }
 
 export async function createNewOffer(deps) {
-  const payload = await offersService.new();
+  const payloadRaw = await offersService.new();
+  const payload = applyNewOfferDefaults(payloadRaw); // ✅ DODAJ
 
   activeOffer = payload;
-  syncOfferCcyFromPayload(payload); // ✅ DODAJ
+  syncOfferCcyFromPayload(payload);
 
   deps.setItems(payload.items || []);
   deps.renderItems();

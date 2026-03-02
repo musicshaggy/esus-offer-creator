@@ -327,6 +327,39 @@ function wireInvoiceDaysInput() {
   });
 }
 
+function setValidUntilToday() {
+  const node = formEl("validUntil");
+  if (!node) return;
+  node.value = todayYMD();
+}
+
+function clearFormFieldsForNewOffer() {
+  const ids = [
+    "custName",
+    "custNip",
+    "custAddr",
+    "custContact",
+    "termsExtra",       
+    "creatorNotes",
+    "shippingNet",
+    "shippingNote",
+    "estimateDays",
+  ];
+
+  ids.forEach((id) => {
+    const node = formEl(id);
+    if (!node) return;
+
+    if (node.type === "checkbox") node.checked = false;
+    else node.value = "";
+
+    try {
+      node.dispatchEvent(new Event("input", { bubbles: true }));
+      node.dispatchEvent(new Event("change", { bubbles: true }));
+    } catch {}
+  });
+}
+
 async function init() {
   initWindowControls();
 
@@ -403,8 +436,9 @@ async function init() {
         showPage("mainPage");
 
         queueMicrotask(() => {
-          clearCustomerFields();
-          scheduleAutosave(autosaveActiveOffer);
+		  clearFormFieldsForNewOffer();   // 🔥 zamiast clearCustomerFields
+		  setValidUntilToday();           // 🔥 ustaw datę
+		  scheduleAutosave(autosaveActiveOffer);
         });
       },
 
@@ -430,7 +464,8 @@ async function init() {
           if (node.type === "checkbox") node.checked = !!val;
           else node.value = val ?? "";
         });
-
+		
+		setValidUntilToday();
         applyInvoiceDaysToFormValue(fields.invoiceDays);
 
         setItems((p.items || []).map(normalizeItem));
@@ -480,8 +515,9 @@ async function init() {
       showPage("mainPage");
 
       queueMicrotask(() => {
-        clearCustomerFields();
-        scheduleAutosave(autosaveActiveOffer);
+		  clearFormFieldsForNewOffer();   // 🔥 zamiast clearCustomerFields
+		  setValidUntilToday();           // 🔥 ustaw datę
+		  scheduleAutosave(autosaveActiveOffer);
       });
     });
   } else {
