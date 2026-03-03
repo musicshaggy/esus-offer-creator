@@ -93,7 +93,13 @@ button i.fa-solid {
   position: relative;
   display: flex;
   align-items: center;
-  min-height: 40px;      /* stabilna wysokość */
+  min-height: 40px;      /* stabilna wysokość inputa */
+}
+
+/* jeśli jest hint -> rezerwujemy miejsce, ale hint NIE rozpycha layoutu */
+.input-money.has-pln-hint{
+  padding-bottom: 0 !important;   /* <= ważne: wyłącz */
+  margin-bottom: 18px;            /* <= tu rezerwujemy miejsce */
 }
 
 .input-money > input{
@@ -137,11 +143,25 @@ button i.fa-solid {
   outline-offset: 2px;
 }
 
-/* nie nadpisuj transform na hover/active */
+/* ✅ WAŻNE: nie zmieniaj transform na hover/active (to powodowało "zjazd") */
 .input-money__ccyBtn:hover,
 .input-money__ccyBtn:active{
-transform: translateY(0px) !important;
+  transform: translateY(-50%) !important;
   filter: brightness(1.06);
+}
+
+/* hint z przeliczeniem — ABSOLUTE, żeby nie zmieniał wysokości wrappera */
+.input-money .buyPlnHint{
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);          /* trochę niżej, bez wchodzenia pod input */
+  margin: 0 !important;
+
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1;
+  opacity: .75;
+  pointer-events: none;
 }
 
 /* menu walut */
@@ -536,19 +556,6 @@ td { position: relative; }
   margin-left: 1px;
 }
 
-/* hint z przeliczeniem */
-.input-money .buyPlnHint{
-  position: relative;
-  left: 0;
-  bottom: -11px;
-  margin: 0 !important;
-  white-space: nowrap;
-  font-size: 11px;
-  line-height: 1;
-  opacity: .75;
-  pointer-events: none;
-}
-
 /* global dropdown waluty (renderowany do body) */
 .ccyMenuFloating{
   position: fixed;
@@ -574,6 +581,7 @@ td { position: relative; }
 .ccyMenuFloating .ccyOpt:hover{
   background: rgba(255,255,255,0.08);
 }
+
 /* === FIX: waluta nie może "skakać" na hover (global button:hover transform) === */
 .input-money .input-money__ccyBtn,
 .input-money .input-money__ccyBtn:hover,
