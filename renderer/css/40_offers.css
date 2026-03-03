@@ -1,603 +1,584 @@
 /* ===== Offers subpage (business look, solid background) ===== */
-    .page { display:none; }
-    .page.is-active { display:block; }
-
-    #offersPage{
-      min-height:100vh;
-      background:#0b0f14; /* solid */
-      color:#e8eef7;
-    }
-    .offers-shell{max-width:1200px;margin:0 auto;padding:20px 18px 28px;}
-    .offers-header{
-      display:flex;align-items:center;justify-content:space-between;gap:12px;
-      padding:14px 14px;border-radius:14px;background:#121a24;
-      border:1px solid rgba(255,255,255,0.08);
-      box-shadow:0 8px 30px rgba(0,0,0,0.35);
-    }
-    .offers-title{display:flex;flex-direction:column;gap:2px;line-height:1.15;}
-    .offers-title h2{margin:0;font-size:18px;font-weight:800;letter-spacing:0.2px;}
-    .offers-title .meta{font-size:12px;color:rgba(232,238,247,0.7);}
-    .offers-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
-    .offers-actions input{
-      width:min(360px,48vw);height:38px;border-radius:12px;background:#0b111a;
-      border:1px solid rgba(255,255,255,0.10);color:#e8eef7;padding:0 12px;outline:none;
-    }
-    .offers-actions input:focus{border-color:rgba(0,154,255,0.65);box-shadow:0 0 0 3px rgba(0,154,255,0.18);}
-    .btn2{
-      height:38px;padding:0 12px;border-radius:12px;border:1px solid rgba(255,255,255,0.10);
-      background:#0b111a;color:#e8eef7;cursor:pointer;font-weight:700;
-    }
-    .btn2:hover{border-color:rgba(255,255,255,0.18);}
-    .btn2.primary{background:rgba(0,154,255,0.18);border-color:rgba(0,154,255,0.45);}
-    .btn2.danger{background:rgba(255,76,76,0.12);border-color:rgba(255,76,76,0.45);}
-    .offers-card{margin-top:14px;border-radius:14px;background:#0f1620;border:1px solid rgba(255,255,255,0.08);overflow:hidden;}
-    .offers-table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;}
-    .offers-table thead th{
-      text-align:left;font-weight:800;padding:12px 12px;background:#121a24;color:rgba(232,238,247,0.85);
-      border-bottom:1px solid rgba(255,255,255,0.08);position:sticky;top:0;z-index:1;
-    }
-    .offers-table tbody td{padding:11px 12px;border-bottom:1px solid rgba(255,255,255,0.06);color:#e8eef7;vertical-align:middle;}
-    .offers-table tbody tr:hover td{background:rgba(255,255,255,0.03);}
-    .offers-table .num{font-weight:900;white-space:nowrap;}
-    .offers-table .muted{color:rgba(232,238,247,0.65);white-space:nowrap;}
-    .offers-table .right{text-align:right;white-space:nowrap;}
-    .row-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;}
-    .row-actions .btn2{height:32px;padding:0 10px;border-radius:10px;font-size:12px;}
-    .offers-empty{padding:18px 14px;color:rgba(232,238,247,0.72);font-size:13px;}
-	
-	/* ===== Header actions grouping (NAV vs FORM) ===== */
-	.header-actions-main {
-	  display: flex;
-	  gap: 14px;
-	  align-items: center;
-	  justify-content: flex-end;
-	  flex-wrap: wrap;
-	}
-
-	.header-actions-nav,
-	.header-actions-form {
-	  display: flex;
-	  gap: 10px;
-	  align-items: center;
-	  flex-wrap: wrap;
-	}
-
-	/* Separator między nawigacją a akcjami formularza */
-	.header-actions-sep {
-	  width: 1px;
-	  height: 28px;
-	  background: rgba(255,255,255,.18);
-	  margin: 0 2px;
-	}
-
-	/* delikatne wyróżnienie nawigacji – bardziej "tabowo" */
-	.header-actions-nav button {
-	  font-weight: 700;
-	}
-
-	/* Na wąskich ekranach separator nie ma sensu */
-	@media (max-width: 720px) {
-	  .header-actions-sep {
-		display: none;
-	  }
-	}
-
-	button i.fa-solid {
-	  margin-right: 6px;
-	  font-size: 0.95em;
-	  opacity: 0.9;
-	}
-	
-	/* ===== Input z walutą (suffix) ===== */
-	/* klikana waluta */
-
-	.input-money > input {
-	  padding-right: 52px; /* więcej miejsca, bo jest chevron */
-	}
-
-	.input-money__ccyBtn {
-	  position: absolute;
-	  right: 6px;
-	  top: 50%;
-	  transform: translateY(-50%);
-
-	  height: 24px;
-	  padding: 0 7px;  
-	  border-radius: 7px;
-
-	  background: rgba(255,255,255,0.08);
-	  border: 1px solid rgba(255,255,255,0.14);
-	  color: rgba(255,255,255,0.9);
-
-	  font-weight: 700;
-	  font-size: 11px;
-	  letter-spacing: 0.02em;
-
-	  display: inline-flex;
-	  align-items: center;
-	  gap: 4px;
-
-	  cursor: pointer;
-	  margin-right: 10px;
-	}
-
-	.input-money__ccyBtn:focus {
-	  outline: 2px solid rgba(255,255,255,0.22);
-	  outline-offset: 2px;
-	}
-
-	/* menu walut */
-	.ccyMenu {
-	  position: absolute;
-	  right: 8px;
-	  top: calc(50% + 20px);
-
-	  min-width: 86px;
-	  padding: 6px;
-
-	  border-radius: 12px;
-	  border: 1px solid rgba(255,255,255,0.14);
-	  background: rgba(10,12,18,0.95);
-	  box-shadow: 0 18px 50px rgba(0,0,0,0.45);
-
-	  display: none;
-	  z-index: 50;
-	}
-
-	.ccyMenu.is-open {
-	  display: block;
-	}
-
-	.ccyOpt {
-	  width: 100%;
-	  text-align: left;
-	  padding: 8px 10px;
-	  border-radius: 10px;
-
-	  background: transparent;
-	  border: none;
-	  color: rgba(255,255,255,0.9);
-
-	  font-weight: 700;
-	  cursor: pointer;
-	}
-
-	.ccyOpt:hover {
-	  background: rgba(255,255,255,0.08);
-	}
-	
-	/* Waluta: nie podlega globalnym hover-transform (żeby nie "skakała") */
-	.input-money__ccyBtn,
-	.input-money__ccyBtn:hover,
-	.input-money__ccyBtn:active {
-	  transform: translateY(-50%) !important;
-	}
-
-	/* Opcjonalnie: menu walut też bez globalnego translateY */
-	.ccyOpt:hover,
-	.ccyOpt:active {
-	  transform: none !important;
-	}
-
-	/* ===== Usunięcie strzałek z input[type=number] ===== */
-	/* Chrome / Edge / Safari */
-	input[type="number"]::-webkit-outer-spin-button,
-	input[type="number"]::-webkit-inner-spin-button {
-	  -webkit-appearance: none;
-	  margin: 0;
-	}
-
-	/* Firefox */
-	input[type="number"] {
-	  -moz-appearance: textfield;
-	}
-
-	/* Dropdown w tabeli: pozwól mu "wyjść" poza komórkę/kontener */
-	table, thead, tbody, tr, td {
-	  overflow: visible !important;
-	}
-
-	/* Jeśli masz wrapper tabeli z overflow (często w UI), zdejmij go dla tej sekcji */
-	.offers-card,
-	.offers-shell,
-	.page,
-	.itemsTableWrap,
-	.itemsTableWrapper {
-	  overflow: visible !important;
-	}
-
-	/* Z-index działa tylko gdy element jest pozycjonowany */
-	td {
-	  position: relative;
-	}
-
-	/* Podbij warstwę wrappera inputa, gdy menu otwarte */
-	.input-money.ccy-open {
-	  z-index: 9999;
-	}
-
-	/* Samo menu najwyżej w swoim kontekście */
-	.ccyMenu {
-	  z-index: 10000;
-	}
-
-	.ccyMenu.is-portal {
-	  position: fixed;
-	  z-index: 20000;
-	}
-	
-	/* Portal dropdown – nie rozciągaj na szerokość aplikacji */
-	.ccyMenu.is-portal {
-	  position: fixed;
-	  z-index: 20000;
-
-	  width: auto !important;
-	  min-width: 86px;
-	  max-width: 180px;
-
-	  left: 0;   /* JS i tak ustawia left/top */
-	  right: auto !important;
-
-	  display: none;
-	}
-
-	.ccyMenu.is-portal.is-open {
-	  display: block;
-	}
-
-	/* Opcje bez "wypychania" */
-	.ccyMenu.is-portal .ccyOpt {
-	  white-space: nowrap;
-	}
-	
-	// Potential fix for no focus
-	#profileModalBackdrop { display: none; pointer-events: none; }
-	#profileModalBackdrop.is-open { display: flex; pointer-events: auto; }
-
-	.modalError{
-	  margin: 10px 0 12px;
-	  padding: 10px 12px;
-	  border-radius: 12px;
-	  border: 1px solid rgba(255, 90, 90, .35);
-	  background: rgba(255, 90, 90, .10);
-	  color: rgba(255,255,255,.92);
-	  font-weight: 650;
-	  font-size: 13px;
-	}
-
-	@keyframes esusShake {
-	  0%,100% { transform: translateX(0); }
-	  20% { transform: translateX(-6px); }
-	  40% { transform: translateX(6px); }
-	  60% { transform: translateX(-4px); }
-	  80% { transform: translateX(4px); }
-	}
-
-	.modalShake {
-	  animation: esusShake 220ms ease-in-out;
-	}
-
-	/* ===== Profile modal error (banner nad modalem) ===== */
-
-	/* backdrop ma być fixed i stanowić punkt odniesienia dla absolute erroru */
-	#profileModalBackdrop{
-	  position: fixed;
-	  inset: 0;
-	}
-
-	/* banner */
-	#profileError.modalError{
-	  position: absolute;
-	  left: 50%;
-	  top: calc(50% - 220px);          /* nad modalem; dopasuj jeśli trzeba */
-	  transform: translate(-50%, 0);
-
-	  max-width: min(560px, calc(100vw - 40px));
-	  padding: 14px 18px;
-
-	  display: flex;
-	  align-items: center;
-	  gap: 14px;
-
-	  border-radius: 14px;
-	  border: 1px solid rgba(255, 80, 80, 0.55);
-	  background: linear-gradient(
-		180deg,
-		rgba(150, 25, 25, 0.96),
-		rgba(105, 18, 18, 0.96)
-	  );
-
-	  color: #fff;
-	  font-weight: 750;
-	  font-size: 14px;
-	  letter-spacing: 0.01em;
-
-	  box-shadow:
-		0 20px 60px rgba(0,0,0,0.55),
-		0 0 0 1px rgba(255,80,80,0.25);
-	}
-
-	/* tekst w bannerze */
-	#profileError .profileErrorText{
-	  flex: 1;
-	}
-
-	/* przycisk X */
-	#profileError .profileErrorClose{
-	  appearance: none;
-	  border: none;
-	  background: transparent;
-
-	  color: #fff;
-	  font-size: 18px;
-	  font-weight: 800;
-	  line-height: 1;
-
-	  cursor: pointer;
-	  opacity: 0.85;
-	  padding: 0 4px;
-	}
-
-	#profileError .profileErrorClose:hover{
-	  opacity: 1;
-	}
-
-	/* animacja wejścia */
-	#profileError.modalError.is-show{
-	  animation: profileErrorIn 180ms ease-out;
-	}
-
-	@keyframes profileErrorIn{
-	  from{
-		opacity: 0;
-		transform: translate(-50%, -6px);
-	  }
-	  to{
-		opacity: 1;
-		transform: translate(-50%, 0);
-	  }
-	}
-
-	/* Tooltip z ceną po rabacie */
-	.esus-tip {
-	  position: fixed;           /* portal do okna, nie zależy od tabeli */
-	  z-index: 25000;
-	  display: none;
-
-	  max-width: 260px;
-	  padding: 8px 10px;
-	  border-radius: 10px;
-
-	  background: rgba(10, 12, 18, 0.95);
-	  border: 1px solid rgba(255,255,255,0.14);
-	  box-shadow: 0 18px 50px rgba(0,0,0,0.45);
-
-	  color: rgba(255,255,255,0.92);
-	  font-size: 12px;
-	  font-weight: 650;
-	  letter-spacing: 0.01em;
-	}
-
-	.esus-tip b { font-weight: 800; }
-
-	.esus-tip::after {
-	  content: "";
-	  position: absolute;
-	  left: 14px;
-	  top: 100%;
-	  border: 7px solid transparent;
-	  border-top-color: rgba(10, 12, 18, 0.95);
-	}
-	#appVersion{
-	  opacity: 0.55;
-	  font-size: 12px;
-	  font-weight: 600;
-	  letter-spacing: 0.02em;
-	}
-	/* ===== Global toast/banner (bez alert()) ===== */
-	#appToast.appToast{
-	  position: fixed;
-	  left: 50%;
-	  bottom: 18px;
-	  transform: translateX(-50%);
-
-	  z-index: 30000;
-	  display: none;
-
-	  max-width: min(640px, calc(100vw - 32px));
-	  padding: 12px 14px;
-	  border-radius: 14px;
-
-	  background: rgba(10, 12, 18, 0.96);
-	  border: 1px solid rgba(255,255,255,0.14);
-	  box-shadow: 0 18px 60px rgba(0,0,0,0.55);
-
-	  color: rgba(255,255,255,0.92);
-	  font-size: 13px;
-	  font-weight: 650;
-
-	  display: flex;
-	  align-items: center;
-	  gap: 12px;
-	}
-
-	#appToast .appToastText{ flex: 1; }
-	#appToast .appToastBody{ flex: 1; min-width: 0; }
-	#appToast .appToastText{ line-height: 1.25; }
-
-	#appToast .appToastActions{
-	  display: inline-flex;
-	  gap: 8px;
-	  align-items: center;
-	}
-
-	#appToast .appToastBtn{
-	  height: 30px;
-	  padding: 0 10px;
-	  border-radius: 10px;
-	  border: 1px solid rgba(255,255,255,0.14);
-	  background: rgba(255,255,255,0.08);
-	  color: rgba(255,255,255,0.92);
-	  font-weight: 750;
-	  font-size: 12px;
-	  cursor: pointer;
-	}
-	#appToast .appToastBtn:hover{ filter: brightness(1.06); }
-	#appToast .appToastBtnPrimary{
-	  background: rgba(255,255,255,0.14);
-	  border-color: rgba(255,255,255,0.22);
-	}
-
-	#appToast .appToastProgress{
-	  margin-top: 8px;
-	  display: none;
-	  align-items: center;
-	  gap: 10px;
-	}
-	#appToast .appToastProgressBar{
-	  width: 220px;
-	  height: 8px;
-	  border-radius: 999px;
-	  background: rgba(255,255,255,0.10);
-	  border: 1px solid rgba(255,255,255,0.10);
-	  overflow: hidden;
-	}
-	#appToast .appToastProgressFill{
-	  height: 100%;
-	  width: 0%;
-	  background: rgba(255,255,255,0.55);
-	  border-radius: 999px;
-	  transition: width 120ms linear;
-	}
-	#appToast .appToastProgressPct{
-	  min-width: 34px;
-	  text-align: right;
-	  opacity: 0.85;
-	  font-weight: 750;
-	  font-size: 12px;
-	}
-
-	#appToast .appToastClose{
-	  appearance: none;
-	  border: none;
-	  background: transparent;
-	  color: #fff;
-	  font-size: 18px;
-	  font-weight: 800;
-	  line-height: 1;
-	  cursor: pointer;
-	  opacity: 0.85;
-	  padding: 0 4px;
-	}
-	#appToast .appToastClose:hover{ opacity: 1; }
-
-	/* wariant error */
-	#appToast.is-error{
-	  border-color: rgba(255, 80, 80, 0.50);
-	  background: linear-gradient(180deg, rgba(150, 25, 25, 0.96), rgba(105, 18, 18, 0.96));
-	}
-
-	/* animacja wejścia */
-	#appToast.is-show{
-	  animation: appToastIn 160ms ease-out;
-	}
-	@keyframes appToastIn{
-	  from{ opacity:0; transform: translate(-50%, 6px); }
-	  to  { opacity:1; transform: translate(-50%, 0); }
-	}
-	
-	/* ===== Item details (warranty) – subtelny toggle ===== */
-	.itemDetailsToggle{
-	  display: inline-flex;
-	  align-items: center;
-	  gap: 6px;
-
-	  font-size: 10px;         /* mniejsze */
-	  letter-spacing: 0.01em;
-
-	  opacity: 0.62;           /* wygląda opcjonalnie */
-	  cursor: pointer;
-	  user-select: none;
-
-	  margin-top: 6px;
-	}
-
-	.itemDetailsToggle:hover{
-	  opacity: 0.9;
-	  text-decoration: underline;
-	}
-
-	.itemDetailsCaret{
-	  font-weight: 900;
-	  font-size: 12px;
-	  opacity: 0.9;
-	}
-
-	/* panel z gwarancją — jeszcze bardziej „secondary” */
-	.itemDetailsWarranty{
-	  margin-top: 6px;
-	  font-size: 12px;
-	  opacity: 0.75;
-	}
-
-	.itemDetailsWarranty label.mini{
-	  font-size: 12px; /* niech mini nie robi się duże */
-	  opacity: 0.9;
-	}
-
-
-	.itemDetailsWarranty:not([hidden]) {
-	  display: flex;
-	}
-
-	.itemsDetailCaret {
-		font-size: 10px;
-		margin-left: 1px;
-	}
-	
-	
-		.input-money {
-	}
-
-	/* hint z przeliczeniem */
-	.input-money .buyPlnHint{
-	  position: relative;
-	  left: 0;
-	  bottom: -11px;          /* odstęp pod inputem */
-	  margin: 0 !important;   /* zabija margin-top z inline */
-	  white-space: nowrap;
-	  font-size: 11px;
-	  line-height: 1;
-	  opacity: .75;
-	  pointer-events: none;
-	}
-	/* żeby było miejsce pod inputem */
-	.input-money.has-pln-hint {
-	}
-	
-	/* global dropdown waluty (renderowany do body) */
-	.ccyMenuFloating{
-	  position: fixed;
-	  z-index: 99999;
-	  min-width: 120px;
-	  padding: 6px;
-	  border-radius: 10px;
-	  background: rgba(10,12,18,0.98);
-	  border: 1px solid rgba(255,255,255,0.14);
-	  box-shadow: 0 22px 60px rgba(0,0,0,0.6);
-	}
-
-	.ccyMenuFloating .ccyOpt{
-	  width: 100%;
-	  text-align: left;
-	  padding: 8px 10px;
-	  border-radius: 8px;
-	  border: 0;
-	  background: transparent;
-	  color: rgba(255,255,255,0.92);
-	  cursor: pointer;
-	}
-
-	.ccyMenuFloating .ccyOpt:hover{
-	  background: rgba(255,255,255,0.08);
+.page { display:none; }
+.page.is-active { display:block; }
+
+#offersPage{
+  min-height:100vh;
+  background:#0b0f14; /* solid */
+  color:#e8eef7;
+}
+.offers-shell{max-width:1200px;margin:0 auto;padding:20px 18px 28px;}
+.offers-header{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:14px 14px;border-radius:14px;background:#121a24;
+  border:1px solid rgba(255,255,255,0.08);
+  box-shadow:0 8px 30px rgba(0,0,0,0.35);
+}
+.offers-title{display:flex;flex-direction:column;gap:2px;line-height:1.15;}
+.offers-title h2{margin:0;font-size:18px;font-weight:800;letter-spacing:0.2px;}
+.offers-title .meta{font-size:12px;color:rgba(232,238,247,0.7);}
+.offers-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
+.offers-actions input{
+  width:min(360px,48vw);height:38px;border-radius:12px;background:#0b111a;
+  border:1px solid rgba(255,255,255,0.10);color:#e8eef7;padding:0 12px;outline:none;
+}
+.offers-actions input:focus{border-color:rgba(0,154,255,0.65);box-shadow:0 0 0 3px rgba(0,154,255,0.18);}
+.btn2{
+  height:38px;padding:0 12px;border-radius:12px;border:1px solid rgba(255,255,255,0.10);
+  background:#0b111a;color:#e8eef7;cursor:pointer;font-weight:700;
+}
+.btn2:hover{border-color:rgba(255,255,255,0.18);}
+.btn2.primary{background:rgba(0,154,255,0.18);border-color:rgba(0,154,255,0.45);}
+.btn2.danger{background:rgba(255,76,76,0.12);border-color:rgba(255,76,76,0.45);}
+.offers-card{margin-top:14px;border-radius:14px;background:#0f1620;border:1px solid rgba(255,255,255,0.08);overflow:hidden;}
+.offers-table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;}
+.offers-table thead th{
+  text-align:left;font-weight:800;padding:12px 12px;background:#121a24;color:rgba(232,238,247,0.85);
+  border-bottom:1px solid rgba(255,255,255,0.08);position:sticky;top:0;z-index:1;
+}
+.offers-table tbody td{padding:11px 12px;border-bottom:1px solid rgba(255,255,255,0.06);color:#e8eef7;vertical-align:middle;}
+.offers-table tbody tr:hover td{background:rgba(255,255,255,0.03);}
+.offers-table .num{font-weight:900;white-space:nowrap;}
+.offers-table .muted{color:rgba(232,238,247,0.65);white-space:nowrap;}
+.offers-table .right{text-align:right;white-space:nowrap;}
+.row-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;}
+.row-actions .btn2{height:32px;padding:0 10px;border-radius:10px;font-size:12px;}
+.offers-empty{padding:18px 14px;color:rgba(232,238,247,0.72);font-size:13px;}
+
+/* ===== Header actions grouping (NAV vs FORM) ===== */
+.header-actions-main {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.header-actions-nav,
+.header-actions-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Separator między nawigacją a akcjami formularza */
+.header-actions-sep {
+  width: 1px;
+  height: 28px;
+  background: rgba(255,255,255,.18);
+  margin: 0 2px;
+}
+
+/* delikatne wyróżnienie nawigacji – bardziej "tabowo" */
+.header-actions-nav button {
+  font-weight: 700;
+}
+
+/* Na wąskich ekranach separator nie ma sensu */
+@media (max-width: 720px) {
+  .header-actions-sep {
+    display: none;
+  }
+}
+
+button i.fa-solid {
+  margin-right: 6px;
+  font-size: 0.95em;
+  opacity: 0.9;
+}
+
+/* ===== Input z walutą (suffix) — FIX (stabilne centrowanie, bez "skakania") ===== */
+.input-money{
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 40px;      /* stabilna wysokość */
+}
+
+.input-money > input{
+  width: 100%;
+  padding-right: 64px;   /* miejsce na PLN + chevron */
+  box-sizing: border-box;
+}
+
+/* klikana waluta */
+.input-money__ccyBtn{
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%); /* jedyne źródło centrowania */
+
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 7px;
+
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: rgba(255,255,255,0.9);
+
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+
+  cursor: pointer;
+  margin: 0 !important; /* absolut -> bez marginesów */
+
+  will-change: transform;
+}
+
+.input-money__ccyBtn:focus{
+  outline: 2px solid rgba(255,255,255,0.22);
+  outline-offset: 2px;
+}
+
+/* nie nadpisuj transform na hover/active */
+.input-money__ccyBtn:hover,
+.input-money__ccyBtn:active{
+transform: translateY(0px) !important;
+  filter: brightness(1.06);
+}
+
+/* menu walut */
+.ccyMenu{
+  position: absolute;
+  right: 8px;
+  top: calc(50% + 20px);
+
+  min-width: 86px;
+  padding: 6px;
+
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(10,12,18,0.95);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+
+  display: none;
+  z-index: 50;
+}
+
+.ccyMenu.is-open{ display: block; }
+
+.ccyOpt{
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 10px;
+
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.9);
+
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ccyOpt:hover{ background: rgba(255,255,255,0.08); }
+
+/* Opcjonalnie: menu walut też bez globalnego translateY */
+.ccyOpt:hover,
+.ccyOpt:active{
+  transform: none !important;
+}
+
+/* ===== Usunięcie strzałek z input[type=number] ===== */
+/* Chrome / Edge / Safari */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Firefox */
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Dropdown w tabeli: pozwól mu "wyjść" poza komórkę/kontener */
+table, thead, tbody, tr, td {
+  overflow: visible !important;
+}
+
+/* Jeśli masz wrapper tabeli z overflow (często w UI), zdejmij go dla tej sekcji */
+.offers-card,
+.offers-shell,
+.page,
+.itemsTableWrap,
+.itemsTableWrapper {
+  overflow: visible !important;
+}
+
+/* Z-index działa tylko gdy element jest pozycjonowany */
+td { position: relative; }
+
+/* Podbij warstwę wrappera inputa, gdy menu otwarte */
+.input-money.ccy-open { z-index: 9999; }
+
+/* Samo menu najwyżej w swoim kontekście */
+.ccyMenu { z-index: 10000; }
+
+.ccyMenu.is-portal{
+  position: fixed;
+  z-index: 20000;
+}
+
+/* Portal dropdown – nie rozciągaj na szerokość aplikacji */
+.ccyMenu.is-portal{
+  position: fixed;
+  z-index: 20000;
+
+  width: auto !important;
+  min-width: 86px;
+  max-width: 180px;
+
+  left: 0;   /* JS i tak ustawia left/top */
+  right: auto !important;
+
+  display: none;
+}
+
+.ccyMenu.is-portal.is-open{ display: block; }
+
+/* Opcje bez "wypychania" */
+.ccyMenu.is-portal .ccyOpt{ white-space: nowrap; }
+
+/* Potential fix for no focus */
+#profileModalBackdrop { display: none; pointer-events: none; }
+#profileModalBackdrop.is-open { display: flex; pointer-events: auto; }
+
+.modalError{
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 90, 90, .35);
+  background: rgba(255, 90, 90, .10);
+  color: rgba(255,255,255,.92);
+  font-weight: 650;
+  font-size: 13px;
+}
+
+@keyframes esusShake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+.modalShake { animation: esusShake 220ms ease-in-out; }
+
+/* ===== Profile modal error (banner nad modalem) ===== */
+
+/* backdrop ma być fixed i stanowić punkt odniesienia dla absolute erroru */
+#profileModalBackdrop{
+  position: fixed;
+  inset: 0;
+}
+
+/* banner */
+#profileError.modalError{
+  position: absolute;
+  left: 50%;
+  top: calc(50% - 220px);
+  transform: translate(-50%, 0);
+
+  max-width: min(560px, calc(100vw - 40px));
+  padding: 14px 18px;
+
+  display: flex;
+  align-items: center;
+  gap: 14px;
+
+  border-radius: 14px;
+  border: 1px solid rgba(255, 80, 80, 0.55);
+  background: linear-gradient(
+    180deg,
+    rgba(150, 25, 25, 0.96),
+    rgba(105, 18, 18, 0.96)
+  );
+
+  color: #fff;
+  font-weight: 750;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+
+  box-shadow:
+    0 20px 60px rgba(0,0,0,0.55),
+    0 0 0 1px rgba(255,80,80,0.25);
+}
+
+/* tekst w bannerze */
+#profileError .profileErrorText{ flex: 1; }
+
+/* przycisk X */
+#profileError .profileErrorClose{
+  appearance: none;
+  border: none;
+  background: transparent;
+
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+
+  cursor: pointer;
+  opacity: 0.85;
+  padding: 0 4px;
+}
+
+#profileError .profileErrorClose:hover{ opacity: 1; }
+
+/* animacja wejścia */
+#profileError.modalError.is-show{ animation: profileErrorIn 180ms ease-out; }
+
+@keyframes profileErrorIn{
+  from{
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  to{
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* Tooltip z ceną po rabacie */
+.esus-tip{
+  position: fixed;
+  z-index: 25000;
+  display: none;
+
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 10px;
+
+  background: rgba(10, 12, 18, 0.95);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+
+  color: rgba(255,255,255,0.92);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.esus-tip b{ font-weight: 800; }
+
+.esus-tip::after{
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 100%;
+  border: 7px solid transparent;
+  border-top-color: rgba(10, 12, 18, 0.95);
+}
+
+#appVersion{
+  opacity: 0.55;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* ===== Global toast/banner (bez alert()) ===== */
+#appToast.appToast{
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+
+  z-index: 30000;
+
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border-radius: 14px;
+
+  background: rgba(10, 12, 18, 0.96);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+
+  color: rgba(255,255,255,0.92);
+  font-size: 13px;
+  font-weight: 650;
+
+  display: none;
+  align-items: center;
+  gap: 12px;
+}
+
+#appToast .appToastText{ flex: 1; }
+#appToast .appToastBody{ flex: 1; min-width: 0; }
+#appToast .appToastText{ line-height: 1.25; }
+
+#appToast .appToastActions{
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#appToast .appToastBtn{
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.92);
+  font-weight: 750;
+  font-size: 12px;
+  cursor: pointer;
+}
+#appToast .appToastBtn:hover{ filter: brightness(1.06); }
+#appToast .appToastBtnPrimary{
+  background: rgba(255,255,255,0.14);
+  border-color: rgba(255,255,255,0.22);
+}
+
+#appToast .appToastProgress{
+  margin-top: 8px;
+  display: none;
+  align-items: center;
+  gap: 10px;
+}
+#appToast .appToastProgressBar{
+  width: 220px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.10);
+  overflow: hidden;
+}
+#appToast .appToastProgressFill{
+  height: 100%;
+  width: 0%;
+  background: rgba(255,255,255,0.55);
+  border-radius: 999px;
+  transition: width 120ms linear;
+}
+#appToast .appToastProgressPct{
+  min-width: 34px;
+  text-align: right;
+  opacity: 0.85;
+  font-weight: 750;
+  font-size: 12px;
+}
+
+#appToast .appToastClose{
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.85;
+  padding: 0 4px;
+}
+#appToast .appToastClose:hover{ opacity: 1; }
+
+/* wariant error */
+#appToast.is-error{
+  border-color: rgba(255, 80, 80, 0.50);
+  background: linear-gradient(180deg, rgba(150, 25, 25, 0.96), rgba(105, 18, 18, 0.96));
+}
+
+/* animacja wejścia */
+#appToast.is-show{ animation: appToastIn 160ms ease-out; }
+@keyframes appToastIn{
+  from{ opacity:0; transform: translate(-50%, 6px); }
+  to  { opacity:1; transform: translate(-50%, 0); }
+}
+
+/* ===== Item details (warranty) – subtelny toggle ===== */
+.itemDetailsToggle{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  font-size: 10px;
+  letter-spacing: 0.01em;
+
+  opacity: 0.62;
+  cursor: pointer;
+  user-select: none;
+
+  margin-top: 6px;
+}
+.itemDetailsToggle:hover{
+  opacity: 0.9;
+  text-decoration: underline;
+}
+.itemDetailsCaret{
+  font-weight: 900;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+/* panel z gwarancją — jeszcze bardziej „secondary” */
+.itemDetailsWarranty{
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.itemDetailsWarranty label.mini{
+  font-size: 12px;
+  opacity: 0.9;
+}
+.itemDetailsWarranty:not([hidden]){ display: flex; }
+
+.itemsDetailCaret{
+  font-size: 10px;
+  margin-left: 1px;
+}
+
+/* hint z przeliczeniem */
+.input-money .buyPlnHint{
+  position: relative;
+  left: 0;
+  bottom: -11px;
+  margin: 0 !important;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1;
+  opacity: .75;
+  pointer-events: none;
+}
+
+/* global dropdown waluty (renderowany do body) */
+.ccyMenuFloating{
+  position: fixed;
+  z-index: 99999;
+  min-width: 120px;
+  padding: 6px;
+  border-radius: 10px;
+  background: rgba(10,12,18,0.98);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 22px 60px rgba(0,0,0,0.6);
+}
+
+.ccyMenuFloating .ccyOpt{
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,0.92);
+  cursor: pointer;
+}
+.ccyMenuFloating .ccyOpt:hover{
+  background: rgba(255,255,255,0.08);
+}
+/* === FIX: waluta nie może "skakać" na hover (global button:hover transform) === */
+.input-money .input-money__ccyBtn,
+.input-money .input-money__ccyBtn:hover,
+.input-money .input-money__ccyBtn:active,
+.input-money .input-money__ccyBtn:focus,
+.input-money .input-money__ccyBtn:focus-visible {
+  transform: translateY(-50%) !important;
 }
