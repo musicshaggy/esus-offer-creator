@@ -335,14 +335,16 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
   store.items.forEach((it, idx) => {
     // backward compatible warranty object
     if (!it.warranty || typeof it.warranty !== "object") {
-      it.warranty = { months: 0, nbd: false };
+      it.warranty = { months: 0, nbd: false, lifetime: false };
     } else {
       it.warranty.months = Number(it.warranty.months || 0);
       it.warranty.nbd = !!it.warranty.nbd;
+      it.warranty.lifetime = !!it.warranty.lifetime;
     }
 
     const wMonths = Math.max(0, parseInt(it?.warranty?.months || 0, 10) || 0);
     const wNbd = !!it?.warranty?.nbd;
+    const wLifetime = !!it?.warranty?.lifetime;
 
     // ✅ initial profit/margin must use calcRowProfitAndMargin (currency-aware)
     const { profitLine, marginPct } = calcRowProfitAndMargin(it);
@@ -389,10 +391,21 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
               min="0"
               max="120"
               step="1"
-              value="${wMonths}"
+              value="${wLifetime ? "" : wMonths}"
+              ${wLifetime ? "disabled" : ""}
               style="width:80px;"
             />
             miesięcy
+          </label>
+
+          <label class="mini" style="display:flex; gap:8px; align-items:center; margin:0;">
+            <input
+              type="checkbox"
+              data-k="warrantyLifetime"
+              data-i="${idx}"
+              ${wLifetime ? "checked" : ""}
+            />
+            Dożywotnia
           </label>
 
           <label class="mini" style="display:flex; gap:8px; align-items:center; margin:0;">
@@ -471,13 +484,41 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
       if (!Number.isFinite(i) || !k) return;
 
       if (k === "warrantyMonths") {
-        const current = store.items[i]?.warranty || { months: 0, nbd: false };
+        const current = store.items[i]?.warranty || { months: 0, nbd: false, lifetime: false };
+        if (current.lifetime) return;
+
         const months = clampInt(e.target.value, 0, 120);
         updateItem(i, { warranty: { ...current, months } });
       } else if (k === "warrantyNbd") {
-        const current = store.items[i]?.warranty || { months: 0, nbd: false };
+        const current = store.items[i]?.warranty || { months: 0, nbd: false, lifetime: false };
         const nbd = !!e.target.checked;
         updateItem(i, { warranty: { ...current, nbd } });
+      } else if (k === "warrantyLifetime") {
+        const current = store.items[i]?.warranty || { months: 0, nbd: false, lifetime: false };
+        const lifetime = !!e.target.checked;
+
+        const nextWarranty = {
+          ...current,
+          lifetime,
+          months: lifetime ? 0 : Math.max(0, parseInt(current.months ?? 0, 10) || 0),
+        };
+
+        updateItem(i, { warranty: nextWarranty });
+
+        const tr = e.target.closest("tr");
+        const monthsInput = tr?.querySelector(`input[data-k="warrantyMonths"][data-i="${i}"]`);
+
+        if (monthsInput) {
+          if (lifetime) {
+            monthsInput.disabled = true;
+            monthsInput.value = "";
+            monthsInput.blur();
+          } else {
+            monthsInput.disabled = false;
+            monthsInput.removeAttribute("disabled");
+            monthsInput.value = nextWarranty.months > 0 ? String(nextWarranty.months) : "";
+          }
+        }
       } else if (k === "qty") {
         updateItem(i, { [k]: Math.max(1, parseInt(e.target.value || "1", 10)) });
       } else if (k === "desc") {

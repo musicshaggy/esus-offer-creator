@@ -151,7 +151,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function normalizeItem(it = {}) {
   const w = it?.warranty && typeof it.warranty === "object" ? it.warranty : {};
-  const months = Math.max(0, parseInt(w.months ?? 0, 10) || 0);
+  const lifetime = !!w.lifetime;
+  const months = lifetime ? 0 : Math.max(0, parseInt(w.months ?? 0, 10) || 0);
   const nbd = !!w.nbd;
 
   return {
@@ -161,7 +162,7 @@ function normalizeItem(it = {}) {
     buyCcy: String(it.buyCcy || "PLN").toUpperCase(),
     discount: Number(it.discount ?? 0),
     qty: Math.max(1, parseInt(it.qty ?? 1, 10) || 1),
-    warranty: { months, nbd },
+    warranty: { months, nbd, lifetime },
   };
 }
 

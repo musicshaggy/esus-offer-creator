@@ -19,6 +19,7 @@ import {
   formatPaymentText,
   getFilePrefix,
   getCompanyFooterLines,
+  formatWarrantyText,
 } from "../i18n/pdfI18n.js";
 
 async function arrayBufferToBase64(buffer) {
@@ -119,26 +120,22 @@ function formatCreatorBlock(lang) {
 }
 
 /* ===== Warranty helpers (PDF) ===== */
-function pluralizeMonthsPL(n) {
-  const x = Math.abs(Number(n) || 0);
-  const mod10 = x % 10;
-  const mod100 = x % 100;
-
-  if (x === 1) return "miesiąc";
-  if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) return "miesiące";
-  return "miesięcy";
-}
-
-function getWarrantyParts(it) {
+function getWarrantyParts(it, lang) {
   const w = it?.warranty;
   if (!w || typeof w !== "object") return null;
 
+  const lifetime = !!w.lifetime;
   const months = Math.max(0, parseInt(w.months ?? 0, 10) || 0);
   const nbd = !!w.nbd;
-  if (!(months > 0)) return null;
 
-  const monthsText = `${months} ${pluralizeMonthsPL(months)}`;
-  return { nbd, monthsText };
+  if (!lifetime && !(months > 0)) return null;
+
+  return {
+    nbd,
+    lifetime,
+    months,
+    text: formatWarrantyText(lang, w),
+  };
 }
 
 /* ===== ESUS enterprise styles ===== */
@@ -645,7 +642,7 @@ export async function generatePdf({ onBefore } = {}) {
     const grossUnit = netAfter * (1 + VAT_RATE);
     const grossLine = grossUnit * qty;
 
-    const warranty = getWarrantyParts(it);
+    const warranty = getWarrantyParts(it, lang);
     const descCell = warranty ? `${it.desc || "-"}\n\u200B` : (it.desc || "-");
 
     const row = [
@@ -714,18 +711,9 @@ export async function generatePdf({ onBefore } = {}) {
       let y = data.cell.y + data.cell.padding("top") + (lines - 1) * baseLineH;
       y += (baseLineH - warrantyLineH) * 3;
 
+      doc.setFont(fontName, "normal");
       doc.setFontSize(warrantyFont);
-
-      let x = x0;
-      const write = (txt, bold) => {
-        doc.setFont(fontName, bold ? "bold" : "normal");
-        doc.text(txt, x, y);
-        x += doc.getTextWidth(txt);
-      };
-
-      write("Gwarancja ", false);
-      if (w.nbd) write("NBD ", true);
-      write(w.monthsText, true);
+      doc.text(w.text, x0, y);
 
       doc.setFont(fontName, "normal");
       doc.setFontSize(baseTableFont);

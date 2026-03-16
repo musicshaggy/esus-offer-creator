@@ -61,6 +61,10 @@ const DICT = {
     thQty: "Ilość",
     thGrossLine: "Wartość brutto",
 
+    warranty: "Gwarancja",
+    warrantyMonthsShort: "m.",
+    warrantyLifetime: "Gwarancja dożywotnia",
+
     // misc
     missingData: "(brak danych)",
   },
@@ -103,6 +107,10 @@ const DICT = {
     thQty: "Qty",
     thGrossLine: "Gross total",
 
+    warranty: "Warranty",
+    warrantyMonthsShort: "mo.",
+    warrantyLifetime: "Lifetime warranty",
+
     missingData: "(missing)",
   },
 
@@ -144,6 +152,10 @@ const DICT = {
     thQty: "Menge",
     thGrossLine: "Brutto gesamt",
 
+    warranty: "Garantie",
+    warrantyMonthsShort: "Mon.",
+    warrantyLifetime: "Lebenslange Garantie",
+
     missingData: "(keine Daten)",
   },
 
@@ -184,6 +196,10 @@ const DICT = {
     thGrossUnit: "Bruttó",
     thQty: "Db",
     thGrossLine: "Bruttó össz.",
+
+    warranty: "Garancia",
+    warrantyMonthsShort: "hó",
+    warrantyLifetime: "Élettartam garancia",
 
     missingData: "(nincs adat)",
   },
@@ -369,4 +385,29 @@ export function getCompanyFooterLines(lang) {
 		"Kapitał zakładowy 5 000 zł.",
       ];
   }
+}
+
+
+export function formatWarrantyText(lang, warranty) {
+  const w = warranty && typeof warranty === "object" ? warranty : null;
+  if (!w) return "";
+
+  const lifetime = !!w.lifetime;
+  const nbd = !!w.nbd;
+  const months = Math.max(0, parseInt(w.months ?? 0, 10) || 0);
+
+  if (lifetime) {
+    return nbd
+      ? `${t(lang, "warrantyLifetime")} NBD`
+      : t(lang, "warrantyLifetime");
+  }
+
+  if (!(months > 0)) return "";
+
+  const parts = [t(lang, "warranty")];
+
+  if (nbd) parts.push("NBD");
+  parts.push(`${months} ${t(lang, "warrantyMonthsShort")}`);
+
+  return parts.join(" ");
 }
