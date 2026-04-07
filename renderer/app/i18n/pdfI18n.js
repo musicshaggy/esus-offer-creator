@@ -39,6 +39,10 @@ const DICT = {
 
     // delivery
     deliverySellerCost: "koszt po stronie sprzedawcy",
+	
+	warranty: "Gwarancja",
+	warrantyMonthsShort: "m.",
+	warrantyLifetime: "Gwarancja dożywotnia",
 
     // summary lines
     sumNet: "Suma netto",
@@ -60,6 +64,12 @@ const DICT = {
     thGrossUnit: "Cena brutto",
     thQty: "Ilość",
     thGrossLine: "Wartość brutto",
+
+    // currency note (only shown for PL language + non-PLN offers)
+    offerCurrencyNoteTitle: "Adnotacja walutowa",
+    offerCurrencyLabel: "Waluta oferty",
+    exchangeRateLabel: "Kurs przeliczeniowy",
+    exchangeRateDateLabel: "Kurs NBP z dnia",
 
     // misc
     missingData: "(brak danych)",
@@ -84,6 +94,10 @@ const DICT = {
     invoiceDeferred: "Invoice with deferred payment",
 
     deliverySellerCost: "at seller’s cost",
+
+	warranty: "Warranty",
+	warrantyMonthsShort: "mo.",
+	warrantyLifetime: "Lifetime warranty",
 
     sumNet: "Net total",
     vat: "VAT",
@@ -125,6 +139,10 @@ const DICT = {
     invoiceDeferred: "Rechnung mit Zahlungsziel",
 
     deliverySellerCost: "auf Kosten des Verkäufers",
+	
+	warranty: "Garantie",
+	warrantyMonthsShort: "Mon.",
+	warrantyLifetime: "Lebenslange Garantie",
 
     sumNet: "Netto-Summe",
     vat: "MwSt.",
@@ -166,6 +184,10 @@ const DICT = {
     invoiceDeferred: "Halasztott fizetésű számla",
 
     deliverySellerCost: "az eladó költségére",
+	
+	warranty: "Garancia",
+	warrantyMonthsShort: "hó",
+	warrantyLifetime: "Élettartam garancia",
 
     sumNet: "Nettó összeg",
     vat: "ÁFA",
@@ -369,4 +391,28 @@ export function getCompanyFooterLines(lang) {
 		"Kapitał zakładowy 5 000 zł.",
       ];
   }
+}
+
+
+export function formatWarrantyText(lang, warranty) {
+  const w = warranty && typeof warranty === "object" ? warranty : null;
+  if (!w) return "";
+
+  const lifetime = !!w.lifetime;
+  const nbd = !!w.nbd;
+  const months = Math.max(0, parseInt(w.months ?? 0, 10) || 0);
+
+  if (lifetime) {
+    return nbd
+      ? `${t(lang, "warrantyLifetime")} NBD`
+      : t(lang, "warrantyLifetime");
+  }
+
+  if (!(months > 0)) return "";
+
+  const parts = [t(lang, "warranty")];
+  if (nbd) parts.push("NBD");
+  parts.push(`${months} ${t(lang, "warrantyMonthsShort")}`);
+
+  return parts.join(" ");
 }

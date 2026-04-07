@@ -19,6 +19,7 @@ import {
   formatPaymentText,
   getFilePrefix,
   getCompanyFooterLines,
+  formatWarrantyText,
 } from "../i18n/pdfI18n.js";
 
 async function arrayBufferToBase64(buffer) {
@@ -89,6 +90,45 @@ function getDocCurrency() {
   return ["PLN", "EUR", "USD"].includes(c) ? c : "PLN";
 }
 
+function getExchangeMetaForPdf(docCcy) {
+  const code = String(docCcy || "PLN").toUpperCase();
+  if (code === "PLN") return null;
+
+  const rate = Number(store.exchange?.rates?.[code]);
+  return {
+    code,
+    rate: Number.isFinite(rate) ? rate : null,
+    lastUpdated: store.exchange?.lastUpdated || "brak danych",
+  };
+}
+
+function formatRateForPdf(rate) {
+  if (!Number.isFinite(Number(rate))) return "brak danych";
+  return Number(rate).toLocaleString("pl-PL", {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  });
+}
+
+function buildCurrencyNoteText(lang, docCcy, exchangeMeta, sumGross) {
+  if (lang !== "pl" || !docCcy || docCcy === "PLN" || !exchangeMeta) return "";
+
+  const rate = Number(exchangeMeta.rate);
+  const grossPln = Number.isFinite(rate) ? sumGross * rate : null;
+
+  const grossPlnText = grossPln
+    ? grossPln.toLocaleString("pl-PL", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }) + " PLN"
+    : "brak danych";
+
+  return [
+    `Ceny w ofercie wyrażono w ${docCcy}. Do przeliczeń przyjęto kurs średni NBP z dnia ${exchangeMeta.lastUpdated}: 1 ${docCcy} = ${formatRateForPdf(rate)} PLN.`,
+    `Wartość oferty brutto w przeliczeniu: ${grossPlnText}.`
+  ];
+}
+
 function formatCustomerBlock(lang) {
   const lines = [];
   const v = (id) => (document.getElementById(id)?.value ?? "").trim();
@@ -119,26 +159,22 @@ function formatCreatorBlock(lang) {
 }
 
 /* ===== Warranty helpers (PDF) ===== */
-function pluralizeMonthsPL(n) {
-  const x = Math.abs(Number(n) || 0);
-  const mod10 = x % 10;
-  const mod100 = x % 100;
-
-  if (x === 1) return "miesiąc";
-  if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) return "miesiące";
-  return "miesięcy";
-}
-
-function getWarrantyParts(it) {
+function getWarrantyParts(it, lang) {
   const w = it?.warranty;
   if (!w || typeof w !== "object") return null;
 
+  const lifetime = !!w.lifetime;
   const months = Math.max(0, parseInt(w.months ?? 0, 10) || 0);
   const nbd = !!w.nbd;
-  if (!(months > 0)) return null;
 
-  const monthsText = `${months} ${pluralizeMonthsPL(months)}`;
-  return { nbd, monthsText };
+  if (!lifetime && !(months > 0)) return null;
+
+  return {
+    lifetime,
+    months,
+    nbd,
+    text: formatWarrantyText(lang, w),
+  };
 }
 
 /* ===== ESUS enterprise styles ===== */
@@ -165,18 +201,31 @@ function drawHeaderCard(doc, {
 }) {
   const accentH = 2;
   const padX = 8;
-  const padTop = 6;
-  const padBottom = 6;
-  const rowH = 5;
 
-  const colGap = 18;
+  // stały układ nagłówka
+  const headerTopPad = 6;     // odstęp od góry karty do nagłówka
+  const headerToDataGap = 5;  // odstęp między nagłówkiem a danymi
+  const padBottom = 6;
+
+  const rowH = 5; // interlinia danych
+
+  const colGap = 18;         // oddech między kolumnami
   const colW = (w - colGap) / 2;
 
-  const leftCount = (leftLines?.length || 0) + 1;
-  const rightCount = (rightLines?.length || 0) + 1;
-  const rows = Math.max(leftCount, rightCount);
-  const cardH = padTop + rows * rowH + padBottom;
+  const L = Array.isArray(leftLines) ? leftLines.filter(Boolean) : [];
+  const R = Array.isArray(rightLines) ? rightLines.filter(Boolean) : [];
 
+  // wysokość danych (nie liczymy tytułu)
+  const leftDataH = Math.max(0, L.length) * rowH;
+  const rightDataH = Math.max(0, R.length) * rowH;
+
+  // wewnętrzna przestrzeń na dane (stała dla obu kolumn)
+  const dataAreaH = Math.max(leftDataH, rightDataH, rowH); // min. 1 linia optycznie
+
+  // całkowita wysokość karty: tytuł + gap + dataArea + dolny padding
+  const cardH = headerTopPad + rowH + headerToDataGap + dataAreaH + padBottom;
+
+  // ===== tło / akcent / ramka =====
   doc.setFillColor(243, 246, 250);
   doc.rect(x, y, w, cardH, "F");
 
@@ -188,47 +237,53 @@ function drawHeaderCard(doc, {
   doc.rect(x, y, w, cardH);
 
   const leftX = x + padX;
-  const topTextY = y + padTop;
+  const rightX = x + w - padX;
 
-  // left
-  let ly = topTextY;
+  // ===== nagłówki: stały baseline =====
+  const titleY = y + headerTopPad + 3.5; // baseline nagłówka
+
   doc.setFont(fontName, "bold");
   doc.setFontSize(9);
   doc.setTextColor(25, 35, 45);
-  doc.text(pdfSafeText(leftTitle), leftX, ly);
-  ly += rowH;
+
+  doc.text(pdfSafeText(leftTitle), leftX, titleY);
+  doc.text(pdfSafeText(rightTitle), rightX, titleY, { align: "right" });
+
+  // ===== obszar danych: centrowanie pionowe per kolumna =====
+  const dataAreaTop = titleY + headerToDataGap; // start obszaru danych (nie start tekstu)
+  const dataAreaCenterY = dataAreaTop + dataAreaH / 2;
+
+  const leftStartY = dataAreaCenterY - leftDataH / 2 + (L.length ? (rowH * 0.75) : 0);
+  const rightStartY = dataAreaCenterY - rightDataH / 2 + (R.length ? (rowH * 0.75) : 0);
 
   doc.setFont(fontName, "normal");
   doc.setFontSize(9);
   doc.setTextColor(25, 35, 45);
-  (leftLines || []).forEach((line) => {
+
+  // left lines
+  let ly = leftStartY;
+  for (const line of L) {
     doc.text(pdfSafeText(line), leftX, ly);
     ly += rowH;
-  });
+  }
 
-  // right
-  let ry = topTextY;
-  doc.setFont(fontName, "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(25, 35, 45);
-  doc.text(pdfSafeText(rightTitle), x + w - padX, ry, { align: "right" });
-  ry += rowH;
-
-  doc.setFont(fontName, "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(25, 35, 45);
-  (rightLines || []).forEach((line) => {
-    doc.text(pdfSafeText(line), x + w - padX, ry, { align: "right" });
+  // right lines
+  let ry = rightStartY;
+  for (const line of R) {
+    doc.text(pdfSafeText(line), rightX, ry, { align: "right" });
     ry += rowH;
-  });
+  }
 
-  // divider – po tekście i tylko na wysokość contentu
+  // ===== divider: krótszy, tylko w obszarze danych =====
   const divX = x + colW + (colGap / 2);
-  const contentTop = y + padTop - 1;
-  const contentBottom = y + cardH - padBottom + 1;
+
+  // zakres dividera: od góry obszaru danych do jego dołu (z małym marginesem)
+  const divTop = dataAreaTop - 2;
+  const divBottom = dataAreaTop + dataAreaH + 2;
+
   doc.setDrawColor(220, 228, 238);
   doc.setLineWidth(0.2);
-  doc.line(divX, contentTop, divX, contentBottom);
+  doc.line(divX, divTop, divX, divBottom);
 
   doc.setTextColor(0);
   return y + cardH;
@@ -264,23 +319,37 @@ function drawDocTitleBlock(doc, {
 
 /* ===== ESUS summary footer (enterprise) ===== */
 function drawEsusTotalsBars(doc, {
-  x, y, w, lang, fontName, offerCcy, vat, sumNet, sumVat, sumGross,
-  // shippingNet zostaje w argach (może się przydać gdzie indziej), ale tu nie używamy
+  x,
+  y,
+  w,
+  lang,
+  fontName,
+  offerCcy,
+  vat,
+  sumNet,
+  sumVat,
+  sumGross,
+  shippingNet, // unused (celowo) – dostawa usunięta
 }) {
   const cardH = 12;
   const accentH = 2;
+  const dividerH = 1.2;
 
+  // divider nad podsumowaniem (żeby nie zlewało się z tabelą)
   doc.setDrawColor(220, 228, 238);
   doc.setLineWidth(0.2);
   doc.line(x, y, x + w, y);
-  y += 1.2;
+  y += dividerH;
 
+  // card bg
   doc.setFillColor(243, 246, 250);
   doc.rect(x, y, w, cardH, "F");
 
+  // accent top line (ESUS)
   doc.setFillColor(...ESUS_BLUE);
   doc.rect(x, y, w, accentH, "F");
 
+  // border
   doc.setDrawColor(220, 228, 238);
   doc.setLineWidth(0.2);
   doc.rect(x, y, w, cardH);
@@ -298,25 +367,42 @@ function drawEsusTotalsBars(doc, {
   const vatStr = pdfSafeText(formatMoney(sumVat, lang, offerCcy));
   const grossStr = pdfSafeText(formatMoney(sumGross, lang, offerCcy));
 
-  doc.setTextColor(25, 35, 45);
+  // subtle vertical separators (tylko w "szarej" części)
+  doc.setDrawColor(220, 228, 238);
+  doc.setLineWidth(0.2);
+  doc.line(x + segW, y + accentH, x + segW, y + cardH);
+  doc.line(x + 2 * segW, y + accentH, x + 2 * segW, y + cardH);
 
+  // ✅ wyróżnij BRUTTO na niebiesko (ten sam segment, prawa 1/3)
+  doc.setFillColor(...ESUS_BLUE);
+  doc.rect(x + 2 * segW, y + accentH, segW, cardH - accentH, "F");
+
+  // tekst w segmentach
+  // seg1: netto
+  doc.setTextColor(25, 35, 45);
   doc.setFont(fontName, "normal"); doc.setFontSize(8);
   doc.text(netLbl, x + 4, baseY);
   doc.setFont(fontName, "bold"); doc.setFontSize(9);
   doc.text(netStr, x + segW - 4, baseY, { align: "right" });
 
+  // seg2: vat
+  doc.setTextColor(25, 35, 45);
   doc.setFont(fontName, "normal"); doc.setFontSize(8);
   doc.text(vatLbl, x + segW + 4, baseY);
   doc.setFont(fontName, "bold"); doc.setFontSize(9);
   doc.text(vatStr, x + 2 * segW - 4, baseY, { align: "right" });
 
+  // seg3: brutto (biały tekst na niebieskim tle)
+  doc.setTextColor(255, 255, 255);
   doc.setFont(fontName, "normal"); doc.setFontSize(8);
   doc.text(grossLbl, x + 2 * segW + 4, baseY);
-  doc.setFont(fontName, "bold"); doc.setFontSize(9);
+  doc.setFont(fontName, "bold"); doc.setFontSize(10);
   doc.text(grossStr, x + w - 4, baseY, { align: "right" });
 
   doc.setTextColor(0);
-  return y + cardH; // ✅ bez “Dostawa” pod spodem
+
+  // Zwracamy tylko dół karty (bez dostawy)
+  return y + cardH;
 }
 
 /* ===== Terms card ===== */
@@ -438,6 +524,8 @@ export async function generatePdf({ onBefore } = {}) {
   const lang = getPdfLang();
   const locale = getLocale(lang);
   const DOC_CCY = getDocCurrency();
+  const showCurrencyNote = lang === "pl" && DOC_CCY !== "PLN";
+  const exchangeMeta = getExchangeMetaForPdf(DOC_CCY);
 
   if (store.items.length === 0) {
     showToast(
@@ -595,7 +683,7 @@ export async function generatePdf({ onBefore } = {}) {
     const grossUnit = netAfter * (1 + VAT_RATE);
     const grossLine = grossUnit * qty;
 
-    const warranty = getWarrantyParts(it);
+    const warranty = getWarrantyParts(it, lang);
     const descCell = warranty ? `${it.desc || "-"}\n\u200B` : (it.desc || "-");
 
     const row = [
@@ -664,18 +752,9 @@ export async function generatePdf({ onBefore } = {}) {
       let y = data.cell.y + data.cell.padding("top") + (lines - 1) * baseLineH;
       y += (baseLineH - warrantyLineH) * 3;
 
+      doc.setFont(fontName, "normal");
       doc.setFontSize(warrantyFont);
-
-      let x = x0;
-      const write = (txt, bold) => {
-        doc.setFont(fontName, bold ? "bold" : "normal");
-        doc.text(txt, x, y);
-        x += doc.getTextWidth(txt);
-      };
-
-      write("Gwarancja ", false);
-      if (w.nbd) write("NBD ", true);
-      write(w.monthsText, true);
+      doc.text(w.text, x0, y);
 
       doc.setFont(fontName, "normal");
       doc.setFontSize(baseTableFont);
@@ -719,9 +798,33 @@ export async function generatePdf({ onBefore } = {}) {
     sumGross,
     shippingNet: shipNet,
   });
+  
+    let afterTotalsY = barsBottomY;
+  const currencyNoteText = buildCurrencyNoteText(
+	  lang,
+	  DOC_CCY,
+	  exchangeMeta,
+	  sumGross
+	);
+
+  if (currencyNoteText) {
+    doc.setFont(fontName, "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(130, 138, 148);
+
+    const noteX = tableX;
+    const noteY = barsBottomY + 5;
+    const noteW = tableW;
+    const wrappedNote = doc.splitTextToSize(currencyNoteText, noteW);
+
+    doc.text(wrappedNote, noteX, noteY);
+
+    afterTotalsY = noteY + Math.max(0, wrappedNote.length - 1) * 3.4;
+    doc.setTextColor(0);
+  }
 
   // ===== Terms =====
-  let termsY = barsBottomY + 6;
+  let termsY = afterTotalsY + 6;
   if (ensureSpace(40, termsY)) termsY = margin + 20;
 
   const paymentMethod = document.getElementById("paymentMethod")?.value || "prepay";
@@ -771,6 +874,7 @@ export async function generatePdf({ onBefore } = {}) {
     fontName,
     lines: termRows,
   });
+
 
   // ===== Extra arrangements =====
   const extra = el("termsExtra").value.trim();
