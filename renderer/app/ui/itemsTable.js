@@ -10,6 +10,8 @@ function offerCcy() {
 /** ===== Tooltip: cena po rabacie (singleton) ===== */
 let _discTipEl = null;
 let _discTipActive = null;
+let _noteTipEl = null;
+let _noteTipActive = null;
 
 function ensureDiscountTip() {
   if (_discTipEl) return _discTipEl;
@@ -64,6 +66,48 @@ function positionTipNearCursor(tip, ev) {
 function hideDiscountTip() {
   if (_discTipEl) _discTipEl.style.display = "none";
   _discTipActive = null;
+}
+
+function ensureNoteTip() {
+  if (_noteTipEl) return _noteTipEl;
+
+  const tip = document.createElement("div");
+  tip.className = "esus-note-tip";
+  tip.style.position = "fixed";
+  tip.style.zIndex = "25000";
+  tip.style.display = "none";
+  tip.style.maxWidth = "340px";
+  tip.style.padding = "10px 12px";
+  tip.style.borderRadius = "12px";
+  tip.style.background = "rgba(10, 12, 18, 0.97)";
+  tip.style.border = "1px solid rgba(255,255,255,0.14)";
+  tip.style.boxShadow = "0 18px 50px rgba(0,0,0,0.45)";
+  tip.style.color = "rgba(255,255,255,0.92)";
+  tip.style.fontSize = "12px";
+  tip.style.lineHeight = "1.45";
+  tip.style.pointerEvents = "none";
+  tip.style.whiteSpace = "pre-wrap";
+  tip.style.wordBreak = "break-word";
+
+  document.body.appendChild(tip);
+  _noteTipEl = tip;
+  return tip;
+}
+
+function hideNoteTip() {
+  if (_noteTipEl) _noteTipEl.style.display = "none";
+  _noteTipActive = null;
+}
+
+function showNoteTipForIndex(i, ev) {
+  const tip = ensureNoteTip();
+  const it = store.items[i];
+  const note = String(it?.internalNote || "").trim();
+  if (!note) return hideNoteTip();
+
+  tip.textContent = note;
+  tip.style.display = "block";
+  positionTipNearCursor(tip, ev);
 }
 
 function showDiscountTipForIndex(i, ev) {
@@ -322,7 +366,6 @@ let _noteModalTextarea = null;
 let _noteModalTitle = null;
 let _noteModalSaveBtn = null;
 let _noteModalClearBtn = null;
-let _noteModalCloseBtn = null;
 let _noteModalBackdrop = null;
 let _noteModalCtx = null;
 
@@ -356,7 +399,6 @@ function ensureNoteModal() {
   _noteModalTitle = modal.querySelector('.itemNoteModal__title');
   _noteModalSaveBtn = modal.querySelector('.itemNoteModal__save');
   _noteModalClearBtn = modal.querySelector('.itemNoteModal__clear');
-  _noteModalCloseBtn = modal.querySelector('.itemNoteModal__cancel');
   _noteModalBackdrop = modal.querySelector('.itemNoteModal__backdrop');
 
   modal.addEventListener('click', (e) => {
@@ -695,6 +737,21 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
       if (!Number.isFinite(idx)) return;
       openNoteModal(idx, { onTotalsChanged, onStateChanged });
     });
+
+    btn.addEventListener("mouseenter", (ev) => {
+      const idx = parseInt(btn.getAttribute("data-note"), 10);
+      if (!Number.isFinite(idx)) return;
+      _noteTipActive = btn;
+      showNoteTipForIndex(idx, ev);
+    });
+
+    btn.addEventListener("mousemove", (ev) => {
+      if (!_noteTipEl || _noteTipEl.style.display === "none") return;
+      positionTipNearCursor(_noteTipEl, ev);
+    });
+
+    btn.addEventListener("mouseleave", () => hideNoteTip());
+    btn.addEventListener("blur", () => hideNoteTip());
   });
 
   // ===== Delete =====
@@ -703,6 +760,7 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
       const idx = parseInt(btn.getAttribute("data-del"), 10);
       removeItem(idx);
       hideDiscountTip();
+      hideNoteTip();
       renderItems({ onTotalsChanged, onStateChanged });
       onTotalsChanged?.();
       onStateChanged?.();
