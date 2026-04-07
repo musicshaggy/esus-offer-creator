@@ -314,6 +314,113 @@ function ensureFloatingMenu() {
 
 }
 
+
+
+/** ===== Internal note modal (singleton) ===== */
+let _noteModalEl = null;
+let _noteModalTextarea = null;
+let _noteModalTitle = null;
+let _noteModalSaveBtn = null;
+let _noteModalClearBtn = null;
+let _noteModalCloseBtn = null;
+let _noteModalBackdrop = null;
+let _noteModalCtx = null;
+
+function ensureNoteModal() {
+  if (_noteModalEl) return _noteModalEl;
+
+  const modal = document.createElement("div");
+  modal.className = "itemNoteModal";
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="itemNoteModal__backdrop" data-note-close="1"></div>
+    <div class="itemNoteModal__dialog" role="dialog" aria-modal="true" aria-labelledby="itemNoteModalTitle">
+      <div class="itemNoteModal__head">
+        <div class="itemNoteModal__title" id="itemNoteModalTitle">Notatka wewnętrzna</div>
+        <button type="button" class="itemNoteModal__x" data-note-close="1" aria-label="Zamknij">✕</button>
+      </div>
+      <div class="itemNoteModal__sub">Widoczna tylko w aplikacji. Nie pojawi się na PDF.</div>
+      <textarea class="itemNoteModal__textarea" rows="8" placeholder="Dodaj notatkę do tej pozycji..."></textarea>
+      <div class="itemNoteModal__actions">
+        <button type="button" class="btnTiny itemNoteModal__clear">Wyczyść</button>
+        <div class="itemNoteModal__actionsRight">
+          <button type="button" class="btnTiny itemNoteModal__save">Zapisz</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  _noteModalEl = modal;
+  _noteModalTextarea = modal.querySelector('.itemNoteModal__textarea');
+  _noteModalTitle = modal.querySelector('.itemNoteModal__title');
+  _noteModalSaveBtn = modal.querySelector('.itemNoteModal__save');
+  _noteModalClearBtn = modal.querySelector('.itemNoteModal__clear');
+  _noteModalCloseBtn = modal.querySelector('.itemNoteModal__cancel');
+  _noteModalBackdrop = modal.querySelector('.itemNoteModal__backdrop');
+
+  modal.addEventListener('click', (e) => {
+    if (e.target.closest('[data-note-close="1"]')) closeNoteModal();
+  });
+
+  _noteModalClearBtn?.addEventListener('click', () => {
+    if (!_noteModalTextarea) return;
+    _noteModalTextarea.value = '';
+    _noteModalTextarea.focus();
+  });
+
+  _noteModalSaveBtn?.addEventListener('click', () => {
+    if (!_noteModalCtx || !_noteModalTextarea) return;
+    const { i, onTotalsChanged, onStateChanged } = _noteModalCtx;
+    updateItem(i, { internalNote: _noteModalTextarea.value || '' });
+
+    const btn = document.querySelector(`.itemNoteBtn[data-i="${i}"]`);
+    const hasNote = !!String(store.items[i]?.internalNote || '').trim();
+    if (btn) {
+      btn.classList.toggle('has-note', hasNote);
+      btn.setAttribute('aria-label', hasNote ? 'Edytuj notatkę wewnętrzną' : 'Dodaj notatkę wewnętrzną');
+      btn.setAttribute('title', hasNote ? 'Edytuj notatkę wewnętrzną' : 'Dodaj notatkę wewnętrzną');
+    }
+
+    onTotalsChanged?.();
+    onStateChanged?.();
+    closeNoteModal();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (!_noteModalEl || _noteModalEl.hidden) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeNoteModal();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      _noteModalSaveBtn?.click();
+    }
+  });
+
+  return modal;
+}
+
+function openNoteModal(i, { onTotalsChanged, onStateChanged } = {}) {
+  const modal = ensureNoteModal();
+  const it = store.items[i];
+  if (!modal || !it) return;
+
+  _noteModalCtx = { i, onTotalsChanged, onStateChanged };
+  if (_noteModalTitle) _noteModalTitle.textContent = `Notatka wewnętrzna · pozycja ${i + 1}`;
+  if (_noteModalTextarea) _noteModalTextarea.value = String(it.internalNote || '');
+
+  modal.hidden = false;
+  requestAnimationFrame(() => _noteModalTextarea?.focus());
+}
+
+function closeNoteModal() {
+  if (!_noteModalEl) return;
+  _noteModalEl.hidden = true;
+  _noteModalCtx = null;
+}
+
 export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
   const tbody = el("itemsBody");
   if (!tbody) return;
@@ -341,10 +448,12 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
       it.warranty.nbd = !!it.warranty.nbd;
       it.warranty.lifetime = !!it.warranty.lifetime;
     }
+    it.internalNote = String(it.internalNote || "");
 
     const wMonths = Math.max(0, parseInt(it?.warranty?.months || 0, 10) || 0);
     const wNbd = !!it?.warranty?.nbd;
     const wLifetime = !!it?.warranty?.lifetime;
+    const hasInternalNote = !!String(it?.internalNote || "").trim();
 
     // ✅ initial profit/margin must use calcRowProfitAndMargin (currency-aware)
     const { profitLine, marginPct } = calcRowProfitAndMargin(it);
@@ -364,17 +473,30 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
           placeholder="Np. Dell PowerEdge / RAM / SSD..."
           value="${escapeHtml(it.desc)}" />
 
-        <span
-          class="itemDetailsToggle"
-          data-act="toggleWarranty"
-          data-i="${idx}"
-          aria-expanded="false"
-          title="Pokaż/ukryj szczegóły"
-          style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;opacity:.85;"
-        >
-          <span class="itemDetailsCaret" aria-hidden="true">∨</span>
-          <span>Szczegóły pozycji</span>
-        </span>
+        <div class="itemRowMetaActions">
+          <span
+            class="itemDetailsToggle"
+            data-act="toggleWarranty"
+            data-i="${idx}"
+            aria-expanded="false"
+            title="Pokaż/ukryj szczegóły"
+            style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;opacity:.85;"
+          >
+            <span class="itemDetailsCaret" aria-hidden="true">∨</span>
+            <span>Szczegóły pozycji</span>
+          </span>
+
+          <button
+            type="button"
+            class="itemNoteBtn ${hasInternalNote ? "has-note" : ""}"
+            data-note="${idx}"
+            data-i="${idx}"
+            title="${hasInternalNote ? "Edytuj notatkę wewnętrzną" : "Dodaj notatkę wewnętrzną"}"
+            aria-label="${hasInternalNote ? "Edytuj notatkę wewnętrzną" : "Dodaj notatkę wewnętrzną"}"
+          >
+            <span aria-hidden="true">📝</span>
+          </button>
+        </div>
 
         <div
           class="itemDetailsWarranty"
@@ -563,6 +685,16 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
     });
 
     inp.addEventListener("mouseleave", () => hideDiscountTip());
+  });
+
+
+  // ===== Internal note =====
+  tbody.querySelectorAll("[data-note]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.getAttribute("data-note"), 10);
+      if (!Number.isFinite(idx)) return;
+      openNoteModal(idx, { onTotalsChanged, onStateChanged });
+    });
   });
 
   // ===== Delete =====

@@ -163,6 +163,7 @@ function normalizeItem(it = {}) {
     discount: Number(it.discount ?? 0),
     qty: Math.max(1, parseInt(it.qty ?? 1, 10) || 1),
     warranty: { months, nbd, lifetime },
+    internalNote: String(it.internalNote ?? ""),
   };
 }
 
