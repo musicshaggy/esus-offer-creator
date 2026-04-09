@@ -90,6 +90,9 @@
 		  Powrót
 		</button>
       </div>
+      <button id="btnAppSettings" class="secondary app-settings-btn" title="Ustawienia" aria-label="Ustawienia">
+        <i class="fa-solid fa-gear"></i>
+      </button>
     </div>
   </div>
 </header>
@@ -129,7 +132,8 @@
           </div>
           <div>
             <label>NIP (opcjonalnie)</label>
-            <input id="custNip" placeholder="123-456-78-90" />
+            <input id="custNip" list="clientsNipSuggestions" placeholder="123-456-78-90" autocomplete="off" />
+            <datalist id="clientsNipSuggestions"></datalist>
           </div>
           <div>
             <label>Adres (ulica, nr, kod, miasto)</label>
@@ -287,7 +291,12 @@
   <section class="card" style="margin-top:16px;">
     <div class="itemsHead">
       <h2 style="margin:0;">Pozycje oferty</h2>
-      <button class="secondary" id="btnAddItem2"><i class="fa-solid fa-plus"></i> Dodaj pozycję</button>
+      <div class="itemsHeadActions">
+        <button class="itemsIconBtn" id="btnCopyItemsHtml" title="Kopiuj HTML tabeli pozycji" aria-label="Kopiuj HTML tabeli pozycji">
+          <i class="fa-solid fa-copy"></i>
+        </button>
+        <button class="secondary" id="btnAddItem2"><i class="fa-solid fa-plus"></i> Dodaj pozycję</button>
+      </div>
     </div>
 
     <div class="tableWrap">
@@ -353,6 +362,28 @@
 		</div>
 	  </div>
 
+      <div class="financeCharts">
+        <section class="financeChartCard">
+          <div class="financeChartHead">
+            <div>
+              <h3>Breakdown koszt vs zysk</h3>
+              <div class="financeChartSub">Wartości per pozycja, liczone wewnętrznie w PLN.</div>
+            </div>
+          </div>
+          <div id="profitBreakdownChart" class="financeChartCanvas"></div>
+        </section>
+
+        <section class="financeChartCard">
+          <div class="financeChartHead">
+            <div>
+              <h3>Gauge marży</h3>
+              <div class="financeChartSub">Bieżący wskaźnik marży dla całej oferty.</div>
+            </div>
+          </div>
+          <div id="marginGaugeChart" class="financeChartCanvas financeChartCanvasGauge"></div>
+        </section>
+      </div>
+
 	  <div class="hint" style="margin-top:10px;">
 		Dane wewnętrzne — nie są widoczne w PDF i nie są przekazywane klientowi.
 	  </div>
@@ -368,14 +399,22 @@
 
       <div class="offers-card">
         <div id="offersEmpty" class="offers-empty" style="display:none;">Brak zapisanych ofert.</div>
-        <div style="overflow:auto; max-height: calc(100vh - 160px);">
+        <div id="offersTableWrap" class="offers-table-wrap">
           <table class="offers-table" aria-label="Lista ofert">
             <thead>
               <tr>
-                <th style="min-width:170px;">Numer</th>
-                <th style="min-width:260px;">Klient</th>
-                <th style="min-width:140px;">Aktualizacja</th>
-                <th style="min-width:120px;" class="right">Brutto</th>
+                <th style="min-width:170px;">
+                  <button type="button" class="offers-sort-btn is-active" data-sort-key="created">Numer <span class="offers-sort-indicator">↓</span></button>
+                </th>
+                <th style="min-width:260px;">
+                  <button type="button" class="offers-sort-btn" data-sort-key="client">Klient <span class="offers-sort-indicator">↕</span></button>
+                </th>
+                <th style="min-width:140px;">
+                  <button type="button" class="offers-sort-btn" data-sort-key="updated">Aktualizacja <span class="offers-sort-indicator">↕</span></button>
+                </th>
+                <th style="min-width:120px;" class="right">
+                  <button type="button" class="offers-sort-btn offers-sort-btn-right" data-sort-key="gross">Brutto <span class="offers-sort-indicator">↕</span></button>
+                </th>
 <th style="min-width:240px;" class="right">Akcje</th>
               </tr>
             </thead>
@@ -384,7 +423,116 @@
         </div>
       </div>
     </div>
+</div>
+  
+<div id="settingsModalBackdrop" class="settingsModalBackdrop" style="display:none;">
+  <div class="settingsModalCard">
+    <div class="settingsModalHead">
+      <div>
+        <h2 style="margin:0;">Ustawienia</h2>
+        <div class="settingsModalSub">Zmień dane osoby wystawiającej oraz zarządzaj danymi aplikacji.</div>
+      </div>
+      <button type="button" class="secondary" id="btnSettingsCloseTop">Zamknij</button>
+    </div>
+
+    <div class="settingsTabs" role="tablist" aria-label="Zakładki ustawień">
+      <button type="button" class="settingsTabBtn is-active" id="settingsTabGeneral" data-settings-tab="general" role="tab" aria-selected="true">
+        Ogólne
+      </button>
+      <button type="button" class="settingsTabBtn" id="settingsTabIntegration" data-settings-tab="integration" role="tab" aria-selected="false">
+        Integracja
+      </button>
+    </div>
+
+    <div class="settingsTabPanel is-active" id="settingsPanelGeneral" data-settings-panel="general" role="tabpanel">
+      <div class="settingsModalGrid">
+        <section class="card settingsModalSection">
+          <h2 style="margin:0 0 10px;">Dane osoby wystawiającej</h2>
+          <div class="fields">
+            <div style="grid-column:1/-1;">
+              <label>Imię i nazwisko</label>
+              <input id="settingsProfileFullName" placeholder="np. Mateusz Barański" />
+            </div>
+            <div>
+              <label>E-mail</label>
+              <input id="settingsProfileEmail" placeholder="np. mbaranski@esus-it.com" />
+            </div>
+            <div>
+              <label>Telefon</label>
+              <input id="settingsProfilePhone" placeholder="np. +48 ..." />
+            </div>
+            <div>
+              <label>Inicjały</label>
+              <input id="settingsProfileInitials" placeholder="MB" />
+            </div>
+          </div>
+          <div class="hint">Zmiana tych danych aktualizuje profil użytkownika używany przy kolejnych ofertach.</div>
+          <div class="settingsModalActions">
+            <button id="btnSettingsSaveProfile">
+              <i class="fa-solid fa-floppy-disk"></i>
+              Zapisz dane
+            </button>
+          </div>
+        </section>
+
+        <section class="card settingsModalSection settingsDangerSection">
+          <h2 style="margin:0 0 10px;">Operacje administracyjne</h2>
+
+          <div class="settingsDangerItem">
+            <div>
+              <div class="settingsDangerTitle">Kursy NBP</div>
+              <div class="settingsDangerText">Aktualny kurs: <span id="settingsExchangeLastUpdated">brak danych</span></div>
+            </div>
+            <button id="btnSettingsRefreshRates" class="secondary">
+              <i class="fa-solid fa-rotate"></i>
+              Pobierz kursy
+            </button>
+          </div>
+
+          <div class="settingsDangerItem">
+            <div>
+              <div class="settingsDangerTitle">Wyczyść licznik numeracji</div>
+              <div class="settingsDangerText">Resetuje licznik sekwencji ofert. Nie usuwa profilu, klientów ani zapisanych ofert.</div>
+            </div>
+            <button id="btnSettingsResetCounter" class="secondary">
+              <i class="fa-solid fa-arrow-rotate-left"></i>
+              Resetuj licznik
+            </button>
+          </div>
+
+          <div class="settingsDangerItem">
+            <div>
+              <div class="settingsDangerTitle">Wyczyść dane aplikacji</div>
+              <div class="settingsDangerText">Usuwa profil użytkownika, zapisany licznik numeracji i bazę zapamiętanych klientów. Oferty pozostają bez zmian.</div>
+            </div>
+            <button id="btnSettingsClearData" class="danger">
+              <i class="fa-solid fa-broom"></i>
+              Wyczyść dane
+            </button>
+          </div>
+
+          <div class="settingsDangerItem">
+            <div>
+              <div class="settingsDangerTitle">Usuń wszystkie oferty</div>
+              <div class="settingsDangerText">Kasuje wszystkie zapisane oferty z lokalnego magazynu aplikacji.</div>
+            </div>
+            <button id="btnSettingsClearOffers" class="danger">
+              <i class="fa-solid fa-trash"></i>
+              Usuń oferty
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="settingsTabPanel" id="settingsPanelIntegration" data-settings-panel="integration" role="tabpanel" hidden>
+      <section class="card settingsModalSection">
+        <h2 style="margin:0 0 10px;">Integracja</h2>
+        <div class="hint" style="margin-top:0;">Ta zakładka jest jeszcze pusta. Tutaj dodamy później ustawienia integracji.</div>
+      </section>
+    </div>
   </div>
+</div>
   
   
   <div id="profileModalBackdrop" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:5000;" tabindex="-1";>

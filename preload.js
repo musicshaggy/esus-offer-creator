@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld("esusAPI", {
   // User settings (profile, initials, offer sequencing)
   settingsGet: () => ipcRenderer.invoke("settings:get"),
   settingsSet: (patch) => ipcRenderer.invoke("settings:set", patch),
+  settingsResetCounter: () => ipcRenderer.invoke("settings:resetCounter"),
+  settingsClearAllData: () => ipcRenderer.invoke("settings:clearAllData"),
 
   // Offers storage
   offersList: () => ipcRenderer.invoke("offers:list"),
@@ -20,7 +22,12 @@ contextBridge.exposeInMainWorld("esusAPI", {
   offersOpen: (id) => ipcRenderer.invoke("offers:open", id),
   offersSave: (payload) => ipcRenderer.invoke("offers:save", payload),
   offersDelete: (id) => ipcRenderer.invoke("offers:delete", id),
+  offersDeleteAll: () => ipcRenderer.invoke("offers:deleteAll"),
   offersDuplicate: (id) => ipcRenderer.invoke("offers:duplicate", id),
+
+  // Clients suggestions
+  clientsSuggest: (query) => ipcRenderer.invoke("clients:suggest", query),
+  clientGetByNip: (nip) => ipcRenderer.invoke("clients:getByNip", nip),
 
   // Optional: file operations already implemented in main.js
   fileSaveJson: (args) => ipcRenderer.invoke("file:saveJson", args),

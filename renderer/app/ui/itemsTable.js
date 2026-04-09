@@ -508,7 +508,7 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>
-        <label class="mini">Opis pozycji</label>
+        <label class="mini"><strong>${idx + 1}</strong> | Opis pozycji:</label>
 
         <input class="descInput"
           data-k="desc" data-i="${idx}"

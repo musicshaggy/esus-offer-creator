@@ -10,5 +10,6 @@ export const offersService = {
   open: (id)=>api().offersOpen(id),
   save: (p)=>api().offersSave(p),
   delete: (id)=>api().offersDelete(id),
+  deleteAll: ()=>api().offersDeleteAll(),
   duplicate: (id)=>api().offersDuplicate(id),
 };

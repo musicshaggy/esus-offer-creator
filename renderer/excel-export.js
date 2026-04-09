@@ -11,12 +11,66 @@ function pad2(x) { return String(x).padStart(2, "0"); }
 function fmtDatePL(d) {
   if (!d) return "";
   const dt = (d instanceof Date) ? d : new Date(d);
-  return `${pad2(dt.getDate())}.${pad2(dt.getMonth()+1)}.${dt.getFullYear()}`;
+  return `${pad2(dt.getDate())}.${pad2(dt.getMonth() + 1)}.${dt.getFullYear()}`;
 }
 
-function moneyFmt(cell) { cell.numFmt = '#,##0.00" zł"'; }
-function pctFmt(cell)   { cell.numFmt = '0.00"%"'; }
-function intFmt(cell)   { cell.numFmt = '0'; }
+function moneyFmt(cell) { cell.numFmt = '#,##0.00" PLN"'; }
+function pctFmt(cell) { cell.numFmt = '0.00"%"'; }
+function intFmt(cell) { cell.numFmt = "0"; }
+
+function moneyFmtByCurrency(cell, currency = "PLN") {
+  const ccy = String(currency || "PLN").toUpperCase();
+  cell.numFmt = `#,##0.00" ${ccy}"`;
+}
+
+function getRateToPLN(code, rates = {}) {
+  const ccy = String(code || "PLN").toUpperCase();
+  if (ccy === "PLN") return 1;
+  const rate = Number(rates?.[ccy]);
+  return Number.isFinite(rate) && rate > 0 ? rate : null;
+}
+
+function toPLN(amount, ccy, rates = {}) {
+  const value = n(amount);
+  const rate = getRateToPLN(ccy, rates);
+  return rate ? value * rate : value;
+}
+
+function fromPLN(amount, ccy, rates = {}) {
+  const value = n(amount);
+  const rate = getRateToPLN(ccy, rates);
+  return rate ? value / rate : value;
+}
+
+function formatWarrantyValue(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value !== "object") return String(value);
+
+  const lifetime = !!value.lifetime;
+  const nbd = !!value.nbd;
+  const months = Math.max(0, parseInt(value.months ?? 0, 10) || 0);
+
+  if (lifetime) return nbd ? "Dozywotnia NBD" : "Dozywotnia";
+  if (!(months > 0)) return "";
+
+  const parts = ["Gwarancja"];
+  if (nbd) parts.push("NBD");
+  parts.push(`${months} mies.`);
+  return parts.join(" ");
+}
+
+function formatLeadtimeValue(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  if (typeof value !== "object") return String(value);
+
+  if (typeof value.label === "string" && value.label.trim()) return value.label.trim();
+  if (typeof value.text === "string" && value.text.trim()) return value.text.trim();
+  if (typeof value.value === "string" && value.value.trim()) return value.value.trim();
+  return "";
+}
 
 function borderAll(cell) {
   cell.border = {
@@ -62,13 +116,15 @@ export async function exportOfferToExcel(payload) {
 
   const vatRate = n(payload.vatRate ?? 0.23);
   const shippingNet = n(payload.shippingNet ?? 0);
+  const offerCurrency = String(payload.offerCurrency ?? "PLN").toUpperCase();
+  const exchangeRates = payload.exchangeRates ?? {};
 
-  const offerNo  = payload.offerNo ?? "";
+  const offerNo = payload.offerNo ?? "";
   const docLabel = payload.docLabel ?? "Oferta";
   const createdAt = payload.createdAt ?? new Date();
 
   const customerName = payload.customerName ?? "";
-  const customerNip  = payload.customerNip ?? "";
+  const customerNip = payload.customerNip ?? "";
   const customerAddr = payload.customerAddr ?? "";
   const customerContact = payload.customerContact ?? "";
 
@@ -77,7 +133,7 @@ export async function exportOfferToExcel(payload) {
 
   const payText = payload.paymentText ?? "";
   const validUntil = payload.validUntil ?? "";
-  const estimateDays = payload.estimateDays ?? ""; // dni roboczych
+  const estimateDays = payload.estimateDays ?? "";
   const extra = payload.termsExtra ?? "";
   const notes = payload.creatorNotes ?? "";
 
@@ -87,59 +143,56 @@ export async function exportOfferToExcel(payload) {
     sellNet: Math.max(0, n(it.net)),
     buyNet: Math.max(0, n(it.buyNet)),
     discount: clamp(n(it.discount), 0, 100),
-    warranty: String(it.warranty ?? ""),     // opcjonalnie
-    leadtime: String(it.leadtime ?? ""),     // opcjonalnie
-    currency: String(it.currency ?? "PLN"),  // opcjonalnie
+    warranty: formatWarrantyValue(it.warranty),
+    leadtime: formatLeadtimeValue(it.leadtime),
+    buyCcy: String(it.buyCcy ?? "PLN").toUpperCase(),
+    sellCcy: offerCurrency,
   }));
 
-  // === Wyliczenia per pozycja
-const rows = items.map((it, idx) => {
-  const sellNetAfter = it.sellNet * (1 - it.discount / 100);
+  const rows = items.map((it, idx) => {
+    const sellNetAfter = it.sellNet * (1 - it.discount / 100);
+    const netLine = sellNetAfter * it.qty;
+    const grossLine = netLine * (1 + vatRate);
+    const revenuePLN = toPLN(netLine, it.sellCcy, exchangeRates);
 
-  // sprzedaż
-  const netLine = sellNetAfter * it.qty;
-  const grossLine = netLine * (1 + vatRate);
+    const costUnitBuy = it.buyNet;
+    const costLineBuy = costUnitBuy * it.qty;
+    const costLinePLN = toPLN(costLineBuy, it.buyCcy, exchangeRates);
 
-  // koszty
-  const costUnit = it.buyNet;          // koszt zakupu 1 szt
-  const costLine = costUnit * it.qty;  //  koszt razem
+    const profitLinePLN = revenuePLN - costLinePLN;
+    const profitUnitPLN = it.qty > 0 ? profitLinePLN / it.qty : 0;
 
-  // zysk
-  const profitUnit = sellNetAfter - costUnit;     // zysk na sztukę (netto, po rabacie)
-  const profitLine = profitUnit * it.qty;         //  zysk x szt.
-
-  // marża liczona od sprzedaży (netto po rabacie, suma)
-  const margin = netLine > 0 ? (profitLine / netLine) * 100 : 0;
-
-  return {
-    lp: idx + 1,
-    product: it.desc,
-    qty: it.qty,
-    unitNet: it.sellNet,
-    netAfter: sellNetAfter,
-    netLine,
-    grossLine,
-    currency: it.currency,
-    warranty: it.warranty,
-    leadtime: it.leadtime,
-
-    costUnit,     // 
-    costLine,     // 
-    profitUnit,   // 
-    profitLine,   // 
-    margin,
-  };
-});
+    return {
+      lp: idx + 1,
+      product: it.desc,
+      qty: it.qty,
+      unitNet: it.sellNet,
+      netAfter: sellNetAfter,
+      netLine,
+      grossLine,
+      sellCcy: it.sellCcy,
+      buyCcy: it.buyCcy,
+      warranty: it.warranty,
+      leadtime: it.leadtime,
+      costUnitBuy,
+      costLinePLN,
+      profitUnit: fromPLN(profitUnitPLN, it.sellCcy, exchangeRates),
+      profitLine: fromPLN(profitLinePLN, it.sellCcy, exchangeRates),
+      margin: revenuePLN > 0 ? (profitLinePLN / revenuePLN) * 100 : 0,
+      rateToPLN: getRateToPLN(it.buyCcy, exchangeRates) ?? 1,
+    };
+  });
 
   const revenueNet = rows.reduce((a, r) => a + r.netLine, 0);
-  const costNet    = rows.reduce((a, r) => a + r.costLine, 0);
-  const profitNet  = revenueNet - costNet;
-  const marginPct  = revenueNet > 0 ? (profitNet / revenueNet) * 100 : 0;
+  const costNetPLN = rows.reduce((a, r) => a + r.costLinePLN, 0);
+  const revenueNetPLN = rows.reduce((a, r) => a + toPLN(r.netLine, r.sellCcy, exchangeRates), 0);
+  const profitNetPLN = revenueNetPLN - costNetPLN;
+  const profitNet = fromPLN(profitNetPLN, offerCurrency, exchangeRates);
+  const marginPct = revenueNetPLN > 0 ? (profitNetPLN / revenueNetPLN) * 100 : 0;
 
   const vat = revenueNet * vatRate;
   const revenueGross = revenueNet + vat;
 
-  // === Workbook
   const wb = new ExcelJS.Workbook();
   wb.creator = "ESUS IT";
   wb.created = new Date(createdAt);
@@ -148,44 +201,40 @@ const rows = items.map((it, idx) => {
     views: [{ state: "frozen", xSplit: 0, ySplit: 5 }],
   });
 
-  // Kolumny: A..N lewa tabela, O przerwa, P..W prawa tabela
   ws.columns = [
-    { key: "A", width: 5 },   // Lp
-    { key: "B", width: 38 },  // Produkt
-    { key: "C", width: 10 },  // Ilość
-    { key: "D", width: 14 },  // cena jedn netto
-    { key: "E", width: 16 },  // netto po rabacie (szt.)
-    { key: "F", width: 16 },  // cena netto x ilość
-    { key: "G", width: 16 },  // brutto
-    { key: "H", width: 10 },  // waluta
-    { key: "I", width: 12 },  // gwarancja
-    { key: "J", width: 14 },  // termin realizacji
-    { key: "K", width: 2 },   // spacer
-    { key: "L", width: 16 },  // koszt zakupu (PLN)
-    { key: "M", width: 16 },  // koszt razem (PLN) - u Ciebie bez FX, ale zostawiamy
-    { key: "N", width: 12 },  // marża %
-    { key: "O", width: 2 },   // spacer
-    { key: "P", width: 18 },  // zysk netto
-    { key: "Q", width: 18 },  // zysk x szt
-    { key: "R", width: 18 },  // (opcjonalnie) inne
+    { key: "A", width: 5 },
+    { key: "B", width: 38 },
+    { key: "C", width: 10 },
+    { key: "D", width: 14 },
+    { key: "E", width: 16 },
+    { key: "F", width: 16 },
+    { key: "G", width: 16 },
+    { key: "H", width: 10 },
+    { key: "I", width: 12 },
+    { key: "J", width: 14 },
+    { key: "K", width: 2 },
+    { key: "L", width: 16 },
+    { key: "M", width: 16 },
+    { key: "N", width: 12 },
+    { key: "O", width: 2 },
+    { key: "P", width: 12 },
+    { key: "Q", width: 12 },
+    { key: "R", width: 18 },
+    { key: "S", width: 18 },
   ];
 
-  // ====== GÓRNE NAGŁÓWKI (jak na screenie) ======
-  // Lewy tytuł
   ws.mergeCells("A1:J1");
   ws.getCell("A1").value = `${docLabel.toUpperCase()} DLA KLIENTA`;
-  styleHeader(ws.getCell("A1"), "FFBEE3F8"); // jasny niebieski
+  styleHeader(ws.getCell("A1"), "FFBEE3F8");
   ws.getCell("A1").font = { bold: true, size: 12, color: { argb: "FF0B1220" } };
 
-  // Prawy tytuł
-  ws.mergeCells("L1:R1");
-  ws.getCell("L1").value = "WYLICZENIE MARŻY I ZYSKU (WEWNĘTRZNE DLA ESUS IT)";
-  styleHeader(ws.getCell("L1"), "FFFAD7A0"); // jasny pomarańcz
+  ws.mergeCells("L1:S1");
+  ws.getCell("L1").value = "WYLICZENIE MARZY I ZYSKU (WEWNETRZNE DLA ESUS IT)";
+  styleHeader(ws.getCell("L1"), "FFFAD7A0");
   ws.getCell("L1").font = { bold: true, size: 12, color: { argb: "FF0B1220" } };
 
   setRowHeight(ws, 1, 22);
 
-  // ====== Meta (2–4) – prosto, czytelnie ======
   ws.mergeCells("A2:E2");
   ws.getCell("A2").value = `Numer: ${offerNo}`;
   ws.getCell("A2").font = { bold: true };
@@ -203,35 +252,32 @@ const rows = items.map((it, idx) => {
 
   ws.mergeCells("A4:J4");
   ws.getCell("A4").value =
-    `Przygotował: ${createdBy}` + (createdByContact ? ` | ${createdByContact}` : "");
+    `Przygotowal: ${createdBy}` + (createdByContact ? ` | ${createdByContact}` : "");
   ws.getCell("A4").alignment = { wrapText: true };
 
-  // Warunki (po prawej u góry w stylu „CEO lubi tabelki”)
-  ws.mergeCells("L2:R2");
-  ws.getCell("L2").value = `Płatność: ${payText || "-"}`;
-  ws.mergeCells("L3:R3");
-  ws.getCell("L3").value = `Ważność: ${validUntil || "-"}` + (estimateDays ? ` | Czas realizacji: ${estimateDays} dni rob.` : "");
-  ws.mergeCells("L4:R4");
-  ws.getCell("L4").value = `Wysyłka netto: ${shippingNet.toFixed(2)} PLN`;
+  ws.mergeCells("L2:S2");
+  ws.getCell("L2").value = `Platnosc: ${payText || "-"}`;
+  ws.mergeCells("L3:S3");
+  ws.getCell("L3").value = `Waznosc: ${validUntil || "-"}` + (estimateDays ? ` | Czas realizacji: ${estimateDays} dni rob.` : "");
+  ws.mergeCells("L4:S4");
+  ws.getCell("L4").value = `Wysylka netto: ${shippingNet.toFixed(2)} ${offerCurrency}`;
 
-  ["A2","A3","A4","L2","L3","L4","F2"].forEach(addr => {
+  ["A2", "A3", "A4", "L2", "L3", "L4", "F2"].forEach((addr) => {
     ws.getCell(addr).alignment = { vertical: "middle", wrapText: true };
   });
   setRowHeight(ws, 2, 18);
   setRowHeight(ws, 3, 18);
   setRowHeight(ws, 4, 18);
 
-  // ====== Nagłówki tabel (wiersz 6) ======
   const headerRow = 6;
 
-  // Lewa tabela
   const leftHeaders = [
     ["A", "Lp."],
     ["B", "Produkt"],
-    ["C", "Ilość sztuk"],
+    ["C", "Ilosc sztuk"],
     ["D", "Cena jedn. netto"],
     ["E", "Cena netto po rab. (szt.)"],
-    ["F", "Cena netto x ilość"],
+    ["F", "Cena netto x ilosc"],
     ["G", "Razem cena brutto"],
     ["H", "Waluta"],
     ["I", "Gwarancja"],
@@ -240,30 +286,28 @@ const rows = items.map((it, idx) => {
   leftHeaders.forEach(([col, text]) => {
     const c = ws.getCell(`${col}${headerRow}`);
     c.value = text;
-    styleSubHeader(c, "FFD6ECFF"); // jaśniejszy niebieski
+    styleSubHeader(c, "FFD6ECFF");
   });
 
-  // Prawa tabela (wewnętrzna)
-	const rightHeaders = [
-	  ["L", "Koszt zakupu / szt (PLN)"],
-	  ["M", "Koszt razem (PLN)"],
-	  ["N", "Marża (%)"],
-	  ["P", "Zysk NETTO / szt"],
-	  ["Q", "Zysk x szt."],
-	  ["R", "Uwagi (wew.)"],
-	];
+  const rightHeaders = [
+    ["L", "Koszt zakupu / szt"],
+    ["M", "Koszt razem (PLN)"],
+    ["N", "Waluta zakupu"],
+    ["P", "Kurs do PLN"],
+    ["Q", "Marza (%)"],
+    ["R", "Zysk NETTO / szt"],
+    ["S", "Zysk x szt."],
+  ];
   rightHeaders.forEach(([col, text]) => {
     const c = ws.getCell(`${col}${headerRow}`);
     c.value = text;
-    styleSubHeader(c, "FFFFE3B5"); // jaśniejszy pomarańcz
+    styleSubHeader(c, "FFFFE3B5");
   });
 
   setRowHeight(ws, headerRow, 28);
 
-  // ====== Wiersze danych ======
   let r = headerRow + 1;
   rows.forEach((x) => {
-    // Left
     ws.getCell(`A${r}`).value = x.lp;
     ws.getCell(`B${r}`).value = x.product;
     ws.getCell(`C${r}`).value = x.qty;
@@ -271,115 +315,108 @@ const rows = items.map((it, idx) => {
     ws.getCell(`E${r}`).value = x.netAfter;
     ws.getCell(`F${r}`).value = x.netLine;
     ws.getCell(`G${r}`).value = x.grossLine;
-    ws.getCell(`H${r}`).value = "PLN";
-    ws.getCell(`I${r}`).value = ""; // opcjonalnie
-    ws.getCell(`J${r}`).value = ""; // opcjonalnie
+    ws.getCell(`H${r}`).value = x.sellCcy;
+    ws.getCell(`I${r}`).value = x.warranty;
+    ws.getCell(`J${r}`).value = x.leadtime;
 
-	// Right (wewnętrzne)
-	ws.getCell(`L${r}`).value = x.costUnit;   // ✅ koszt zakupu 1 szt
-	ws.getCell(`M${r}`).value = x.costLine;   // ✅ koszt razem (x szt)
-	ws.getCell(`N${r}`).value = x.margin;     // marża % (od sumy)
-	ws.getCell(`P${r}`).value = x.profitUnit; // ✅ zysk na 1 szt
-	ws.getCell(`Q${r}`).value = x.profitLine; // ✅ zysk x szt
-	ws.getCell(`R${r}`).value = "";
+    ws.getCell(`L${r}`).value = x.costUnitBuy;
+    ws.getCell(`M${r}`).value = x.costLinePLN;
+    ws.getCell(`N${r}`).value = x.buyCcy;
+    ws.getCell(`P${r}`).value = x.rateToPLN;
+    ws.getCell(`Q${r}`).value = x.margin;
+    ws.getCell(`R${r}`).value = x.profitUnit;
+    ws.getCell(`S${r}`).value = x.profitLine;
 
-    // Style cells
-    ["A","C","D","E","F","G","H","I","J","L","M","N","P","Q","R"].forEach(col => {
-      styleCell(ws.getCell(`${col}${r}`), ["B"].includes(col) ? "left" : "center");
+    ["A", "C", "D", "E", "F", "G", "H", "I", "J", "L", "M", "N", "P", "Q", "R", "S"].forEach((col) => {
+      styleCell(ws.getCell(`${col}${r}`), "center");
     });
     styleCell(ws.getCell(`B${r}`), "left");
 
-    // Formats
     intFmt(ws.getCell(`A${r}`));
     intFmt(ws.getCell(`C${r}`));
 
-    moneyFmt(ws.getCell(`D${r}`));
-    moneyFmt(ws.getCell(`E${r}`));
-    moneyFmt(ws.getCell(`F${r}`));
-    moneyFmt(ws.getCell(`G${r}`));
-
-    moneyFmt(ws.getCell(`L${r}`));
+    moneyFmtByCurrency(ws.getCell(`D${r}`), x.sellCcy);
+    moneyFmtByCurrency(ws.getCell(`E${r}`), x.sellCcy);
+    moneyFmtByCurrency(ws.getCell(`F${r}`), x.sellCcy);
+    moneyFmtByCurrency(ws.getCell(`G${r}`), x.sellCcy);
+    moneyFmtByCurrency(ws.getCell(`L${r}`), x.buyCcy);
     moneyFmt(ws.getCell(`M${r}`));
-    pctFmt(ws.getCell(`N${r}`));
-    moneyFmt(ws.getCell(`P${r}`));
-    moneyFmt(ws.getCell(`Q${r}`));
+    ws.getCell(`P${r}`).numFmt = '#,##0.0000';
+    pctFmt(ws.getCell(`Q${r}`));
+    moneyFmtByCurrency(ws.getCell(`R${r}`), x.sellCcy);
+    moneyFmtByCurrency(ws.getCell(`S${r}`), x.sellCcy);
 
-    // Profit coloring (opcjonalnie: czerwony gdy <0)
-    if (x.profit < 0) {
-      ws.getCell(`P${r}`).font = { color: { argb: "FFFF4D4D" }, bold: true };
-      ws.getCell(`Q${r}`).font = { color: { argb: "FFFF4D4D" }, bold: true };
+    if (x.profitLine < 0) {
+      ws.getCell(`R${r}`).font = { color: { argb: "FFFF4D4D" }, bold: true };
+      ws.getCell(`S${r}`).font = { color: { argb: "FFFF4D4D" }, bold: true };
     } else {
-      ws.getCell(`P${r}`).font = { bold: true };
-      ws.getCell(`Q${r}`).font = { bold: true };
+      ws.getCell(`R${r}`).font = { bold: true };
+      ws.getCell(`S${r}`).font = { bold: true };
     }
 
     setRowHeight(ws, r, 24);
     r++;
   });
 
-  // ====== Podsumowania na dole (jak w Twoim arkuszu) ======
   const sumRow = r + 1;
 
   ws.mergeCells(`E${sumRow}:F${sumRow}`);
   ws.getCell(`E${sumRow}`).value = "SUMA NETTO";
   styleHeader(ws.getCell(`E${sumRow}`), "FFD6ECFF");
   ws.getCell(`G${sumRow}`).value = revenueNet;
-  moneyFmt(ws.getCell(`G${sumRow}`));
+  moneyFmtByCurrency(ws.getCell(`G${sumRow}`), offerCurrency);
   styleCell(ws.getCell(`G${sumRow}`), "center");
   ws.getCell(`G${sumRow}`).font = { bold: true };
 
-  ws.mergeCells(`E${sumRow+1}:F${sumRow+1}`);
-  ws.getCell(`E${sumRow+1}`).value = "SUMA BRUTTO";
-  styleHeader(ws.getCell(`E${sumRow+1}`), "FFD6ECFF");
-  ws.getCell(`G${sumRow+1}`).value = revenueGross;
-  moneyFmt(ws.getCell(`G${sumRow+1}`));
-  styleCell(ws.getCell(`G${sumRow+1}`), "center");
-  ws.getCell(`G${sumRow+1}`).font = { bold: true };
+  ws.mergeCells(`E${sumRow + 1}:F${sumRow + 1}`);
+  ws.getCell(`E${sumRow + 1}`).value = "SUMA BRUTTO";
+  styleHeader(ws.getCell(`E${sumRow + 1}`), "FFD6ECFF");
+  ws.getCell(`G${sumRow + 1}`).value = revenueGross;
+  moneyFmtByCurrency(ws.getCell(`G${sumRow + 1}`), offerCurrency);
+  styleCell(ws.getCell(`G${sumRow + 1}`), "center");
+  ws.getCell(`G${sumRow + 1}`).font = { bold: true };
 
-  // Podsumowanie wewnętrzne (koszt/zysk/marża)
   ws.mergeCells(`L${sumRow}:M${sumRow}`);
   ws.getCell(`L${sumRow}`).value = "KOSZT ZAKUPU NETTO";
   styleHeader(ws.getCell(`L${sumRow}`), "FFFFE3B5");
-  ws.getCell(`P${sumRow}`).value = costNet;
+  ws.getCell(`P${sumRow}`).value = costNetPLN;
   moneyFmt(ws.getCell(`P${sumRow}`));
   styleCell(ws.getCell(`P${sumRow}`), "center");
   ws.getCell(`P${sumRow}`).font = { bold: true };
 
-  ws.mergeCells(`L${sumRow+1}:M${sumRow+1}`);
-  ws.getCell(`L${sumRow+1}`).value = "ZYSK NETTO";
-  styleHeader(ws.getCell(`L${sumRow+1}`), "FFFFE3B5");
-  ws.getCell(`P${sumRow+1}`).value = profitNet;
-  moneyFmt(ws.getCell(`P${sumRow+1}`));
-  styleCell(ws.getCell(`P${sumRow+1}`), "center");
-  ws.getCell(`P${sumRow+1}`).font = { bold: true };
+  ws.mergeCells(`L${sumRow + 1}:M${sumRow + 1}`);
+  ws.getCell(`L${sumRow + 1}`).value = "ZYSK NETTO";
+  styleHeader(ws.getCell(`L${sumRow + 1}`), "FFFFE3B5");
+  ws.getCell(`P${sumRow + 1}`).value = profitNet;
+  moneyFmtByCurrency(ws.getCell(`P${sumRow + 1}`), offerCurrency);
+  styleCell(ws.getCell(`P${sumRow + 1}`), "center");
+  ws.getCell(`P${sumRow + 1}`).font = { bold: true };
 
-  ws.mergeCells(`L${sumRow+2}:M${sumRow+2}`);
-  ws.getCell(`L${sumRow+2}`).value = "MARŻA";
-  styleHeader(ws.getCell(`L${sumRow+2}`), "FFFFE3B5");
-  ws.getCell(`P${sumRow+2}`).value = marginPct;
-  pctFmt(ws.getCell(`P${sumRow+2}`));
-  styleCell(ws.getCell(`P${sumRow+2}`), "center");
-  ws.getCell(`P${sumRow+2}`).font = { bold: true };
+  ws.mergeCells(`L${sumRow + 2}:M${sumRow + 2}`);
+  ws.getCell(`L${sumRow + 2}`).value = "MARZA";
+  styleHeader(ws.getCell(`L${sumRow + 2}`), "FFFFE3B5");
+  ws.getCell(`P${sumRow + 2}`).value = marginPct;
+  pctFmt(ws.getCell(`P${sumRow + 2}`));
+  styleCell(ws.getCell(`P${sumRow + 2}`), "center");
+  ws.getCell(`P${sumRow + 2}`).font = { bold: true };
 
-  // ====== Komentarz (jak na screenie) ======
   const commentRow = sumRow + 4;
-  ws.mergeCells(`L${commentRow}:R${commentRow}`);
-  ws.getCell(`L${commentRow}`).value = "KOMENTARZ (krótki opis jeśli oferta odbiega od założeń)";
+  ws.mergeCells(`L${commentRow}:S${commentRow}`);
+  ws.getCell(`L${commentRow}`).value = "KOMENTARZ (krotki opis jesli oferta odbiega od zalozen)";
   styleHeader(ws.getCell(`L${commentRow}`), "FFFAD7A0");
 
-  ws.mergeCells(`L${commentRow+1}:R${commentRow+6}`);
-  ws.getCell(`L${commentRow+1}`).value =
+  ws.mergeCells(`L${commentRow + 1}:S${commentRow + 6}`);
+  ws.getCell(`L${commentRow + 1}`).value =
     [extra ? `Ustalenia: ${extra}` : "", notes ? `Uwagi: ${notes}` : ""].filter(Boolean).join("\n") || "";
-  ws.getCell(`L${commentRow+1}`).alignment = { vertical: "top", horizontal: "left", wrapText: true };
-  ws.getCell(`L${commentRow+1}`).border = {
+  ws.getCell(`L${commentRow + 1}`).alignment = { vertical: "top", horizontal: "left", wrapText: true };
+  ws.getCell(`L${commentRow + 1}`).border = {
     top: { style: "thin", color: { argb: "FF2A2F3A" } },
     left: { style: "thin", color: { argb: "FF2A2F3A" } },
     bottom: { style: "thin", color: { argb: "FF2A2F3A" } },
     right: { style: "thin", color: { argb: "FF2A2F3A" } },
   };
-  setRowHeight(ws, commentRow+1, 110);
+  setRowHeight(ws, commentRow + 1, 110);
 
-  // === Zapis pliku
   const safe = (offerNo || "ESUS").replaceAll("/", "-");
   const fileName = `ESUS_internal_${safe}.xlsx`;
 

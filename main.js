@@ -110,6 +110,97 @@ function writeJsonSafe(p, data) {
   fs.writeFileSync(p, JSON.stringify(data, null, 2), "utf-8");
 }
 
+function deleteFileIfExists(p) {
+  if (fs.existsSync(p)) fs.unlinkSync(p);
+}
+
+// ===== Clients persistence (in userData/clients.json) =====
+function clientsPath() {
+  return path.join(app.getPath("userData"), "clients.json");
+}
+
+function readClientsDb() {
+  return readJsonSafe(clientsPath(), { byNip: {} });
+}
+
+function writeClientsDb(db) {
+  writeJsonSafe(clientsPath(), db);
+}
+
+function normalizeNip(nip) {
+  return String(nip || "").replace(/\D+/g, "");
+}
+
+function normalizeClientRecord(input) {
+  const nip = normalizeNip(input?.nip);
+  if (!nip) return null;
+
+  return {
+    nip,
+    name: String(input?.name || "").trim(),
+    addr: String(input?.addr || "").trim(),
+    contact: String(input?.contact || "").trim(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function maybeSaveClientFromOffer(payload) {
+  const fields = payload?.fields || {};
+  const next = normalizeClientRecord({
+    nip: fields.custNip,
+    name: fields.custName,
+    addr: fields.custAddr,
+    contact: fields.custContact,
+  });
+
+  if (!next) return null;
+  if (!next.name && !next.addr && !next.contact) return null;
+
+  const db = readClientsDb();
+  const prev = db?.byNip?.[next.nip] || null;
+  const merged = {
+    nip: next.nip,
+    name: next.name || prev?.name || "",
+    addr: next.addr || prev?.addr || "",
+    contact: next.contact || prev?.contact || "",
+    updatedAt: next.updatedAt,
+  };
+
+  db.byNip = { ...(db.byNip || {}), [merged.nip]: merged };
+  writeClientsDb(db);
+  return merged;
+}
+
+function searchClients(query) {
+  const q = String(query || "").trim().toLowerCase();
+  const db = readClientsDb();
+  const rows = Object.values(db?.byNip || {});
+
+  const filtered = !q
+    ? rows
+    : rows.filter((row) => {
+        const nip = String(row?.nip || "").toLowerCase();
+        const name = String(row?.name || "").toLowerCase();
+        const addr = String(row?.addr || "").toLowerCase();
+        const contact = String(row?.contact || "").toLowerCase();
+        return nip.includes(q) || name.includes(q) || addr.includes(q) || contact.includes(q);
+      });
+
+  return filtered
+    .sort((a, b) => String(b?.updatedAt || "").localeCompare(String(a?.updatedAt || "")))
+    .slice(0, 12);
+}
+
+function clearAllOffersData() {
+  const dir = offersDir();
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith(".json"));
+  for (const f of files) {
+    fs.unlinkSync(path.join(dir, f));
+  }
+  writeOffersIndex({ ids: [] });
+  return { ok: true, deleted: files.length };
+}
+
 // ===== Offers persistence (in userData/offers) =====
 function offersDir() {
   const dir = path.join(app.getPath("userData"), "offers");
@@ -254,6 +345,48 @@ ipcMain.handle("settings:set", async (_evt, patch) => {
   return next;
 });
 
+ipcMain.handle("settings:resetCounter", async () => {
+  const p = getSettingsPath();
+  const current = readJsonSafe(p, {
+    initials: "",
+    offerSeq: {},
+    profile: null,
+    docDefaults: { offerCcy: "PLN", lang: "pl", vatCode: "23" },
+  });
+
+  const next = {
+    ...current,
+    offerSeq: {},
+  };
+
+  writeJsonSafe(p, next);
+  return next;
+});
+
+ipcMain.handle("settings:clearAllData", async () => {
+  deleteFileIfExists(getSettingsPath());
+  deleteFileIfExists(clientsPath());
+  return {
+    initials: "",
+    offerSeq: {},
+    profile: null,
+    docDefaults: { offerCcy: "PLN", lang: "pl", vatCode: "23" },
+  };
+});
+
+// ===== IPC: clients =====
+ipcMain.handle("clients:suggest", async (_evt, query) => {
+  return searchClients(query);
+});
+
+ipcMain.handle("clients:getByNip", async (_evt, nip) => {
+  const normalized = normalizeNip(nip);
+  if (!normalized) return null;
+
+  const db = readClientsDb();
+  return db?.byNip?.[normalized] || null;
+});
+
 // ===== IPC: offers CRUD =====
 ipcMain.handle("offers:list", async () => {
   const idx = readOffersIndex();
@@ -267,6 +400,7 @@ ipcMain.handle("offers:list", async () => {
       id,
       offerNo: payload?.meta?.offerNo || payload?.offerNo || "—",
       client: payload?.fields?.custName || payload?.meta?.client || "",
+      createdAt: payload?.meta?.createdAt || "",
       updatedAt: payload?.meta?.updatedAt || payload?.meta?.createdAt || "",
     });
   }
@@ -378,6 +512,7 @@ ipcMain.handle("offers:save", async (_evt, payload) => {
   };
 
   writeJsonSafe(filePath, next);
+  maybeSaveClientFromOffer(next);
 
   const idx = readOffersIndex();
   const ids = Array.isArray(idx.ids) ? idx.ids : [];
@@ -395,6 +530,10 @@ ipcMain.handle("offers:delete", async (_evt, id) => {
   const ids = (idx.ids || []).filter((x) => x !== id);
   writeOffersIndex({ ids });
   return { ok: true };
+});
+
+ipcMain.handle("offers:deleteAll", async () => {
+  return clearAllOffersData();
 });
 
 ipcMain.handle("offers:duplicate", async (_evt, id) => {
