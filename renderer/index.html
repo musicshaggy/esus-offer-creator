@@ -132,7 +132,17 @@
           </div>
           <div>
             <label>NIP (opcjonalnie)</label>
-            <input id="custNip" list="clientsNipSuggestions" placeholder="123-456-78-90" autocomplete="off" />
+            <div class="clientNipRow">
+              <div class="clientNipField">
+                <input id="custNip" list="clientsNipSuggestions" placeholder="123-456-78-90" autocomplete="off" />
+                <div class="clientNipActions">
+                  <span id="custNipLoading" class="clientNipSpinner" aria-hidden="true"></span>
+                </div>
+              </div>
+              <button type="button" id="btnDeleteClientCache" class="clientNipIconBtn clientNipDeleteBtn" title="Usuń klienta z lokalnej bazy" aria-label="Usuń klienta z lokalnej bazy">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
             <datalist id="clientsNipSuggestions"></datalist>
           </div>
           <div>
@@ -290,7 +300,10 @@
 
   <section class="card" style="margin-top:16px;">
     <div class="itemsHead">
-      <h2 style="margin:0;">Pozycje oferty</h2>
+      <div class="itemsHeadTitle">
+        <h2 style="margin:0;">Pozycje oferty</h2>
+        <div id="offerVersionInfo" class="offerVersionInfo">Ostatnia edycja pozycji: brak danych</div>
+      </div>
       <div class="itemsHeadActions">
         <button class="itemsIconBtn" id="btnCopyItemsHtml" title="Kopiuj HTML tabeli pozycji" aria-label="Kopiuj HTML tabeli pozycji">
           <i class="fa-solid fa-copy"></i>
@@ -527,8 +540,39 @@
 
     <div class="settingsTabPanel" id="settingsPanelIntegration" data-settings-panel="integration" role="tabpanel" hidden>
       <section class="card settingsModalSection">
-        <h2 style="margin:0 0 10px;">Integracja</h2>
-        <div class="hint" style="margin-top:0;">Ta zakładka jest jeszcze pusta. Tutaj dodamy później ustawienia integracji.</div>
+        <div class="settingsIntegrationHeader">
+          <h2 style="margin:0;">Integracja</h2>
+          <div class="settingsIntegrationBrand" aria-hidden="true">
+            <img src="./assets/IdoSell.png" alt="" class="settingsIntegrationLogo" />
+          </div>
+        </div>
+
+        <div class="fields">
+          <div style="grid-column:1/-1;">
+            <label>IdoSell Base URL</label>
+            <input id="settingsIdoSellBaseUrl" placeholder="np. https://panel123.iai-system.com" />
+          </div>
+          <div style="grid-column:1/-1;">
+            <label>Klucz API</label>
+            <input id="settingsIdoSellApiKey" type="password" placeholder="Wklej klucz Admin API" autocomplete="off" />
+          </div>
+        </div>
+
+        <div class="settingsIntegrationStatus" id="settingsIdoSellStatusBox">
+          <div class="settingsIntegrationStatusTitle">Status połączenia</div>
+          <div class="settingsIntegrationStatusText" id="settingsIdoSellStatusText">Brak testu połączenia.</div>
+        </div>
+
+        <div class="settingsModalActions settingsModalActionsSplit">
+          <button id="btnSettingsSaveIdoSell" class="secondary">
+            <i class="fa-solid fa-floppy-disk"></i>
+            Zapisz integrację
+          </button>
+          <button id="btnSettingsTestIdoSell">
+            <i class="fa-solid fa-plug-circle-check"></i>
+            Testuj połączenie
+          </button>
+        </div>
       </section>
     </div>
   </div>

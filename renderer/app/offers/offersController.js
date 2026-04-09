@@ -8,12 +8,20 @@ let activeOffer = null;
 
 function syncOfferCcyFromPayload(payload) {
   const ccy = String(payload?.meta?.offerCcy || "PLN").toUpperCase();
+  const lang = String(payload?.meta?.lang || "pl").toLowerCase();
+  const vatCode = String(payload?.meta?.vatCode || "23");
+  const lastItemsEditedAt = String(
+    payload?.meta?.lastItemsEditedAt ||
+    payload?.meta?.updatedAt ||
+    payload?.meta?.createdAt ||
+    ""
+  );
 
   // ✅ Źródło prawdy dla bieżącej sesji oferty
-  setOffer({ ccy });
+  setOffer({ ccy, lang, vatCode, lastItemsEditedAt });
 
   // ✅ Jeśli gdzieś jeszcze patrzysz na settings (np. formatowanie), to synchronizuj
-  setSettings({ offerCcy: ccy });
+  setSettings({ offerCcy: ccy, lang, vatCode });
 }
 
 function applyNewOfferDefaults(payload) {
@@ -109,7 +117,14 @@ export async function flushAutosave() {
 }
 
 export async function saveNow(payload) {
-  return offersService.save(payload);
+  const saved = await offersService.save(payload);
+  activeOffer = saved;
+  syncOfferCcyFromPayload(saved);
+  return saved;
+}
+
+export function getActiveOffer() {
+  return activeOffer;
 }
 
 export async function commitAndSaveNow(getters) {

@@ -1,5 +1,12 @@
 /* Items */
-    .itemsHead{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px;}
+    .itemsHead{display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px;}
+    .itemsHeadTitle{display:flex; flex-direction:column; gap:4px; min-width:0;}
+    .offerVersionInfo{
+      font-size:12px;
+      color:var(--muted);
+      line-height:1.35;
+      opacity:.92;
+    }
     .itemsHeadActions{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
     .itemsIconBtn{
       width:38px;

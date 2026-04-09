@@ -1,4 +1,10 @@
-import { getUserSettings, setUserSettings, resetUserCounter, clearAllUserData } from "../state/userSettings.js";
+import {
+  getUserSettings,
+  setUserSettings,
+  resetUserCounter,
+  clearAllUserData,
+  testIdoSellConnection,
+} from "../state/userSettings.js";
 import { offersService } from "../offers/offersService.js";
 import { showToast, showToastAction } from "./toast.js";
 
@@ -25,6 +31,19 @@ function normalizeInitials(v) {
   return s;
 }
 
+function normalizeBaseUrl(v) {
+  const raw = String(v || "").trim();
+  if (!raw) return "";
+
+  try {
+    const withProtocol = /^[a-z]+:\/\//i.test(raw) ? raw : `https://${raw}`;
+    const url = new URL(withProtocol);
+    return url.origin;
+  } catch {
+    return raw;
+  }
+}
+
 function show() {
   const node = el("settingsModalBackdrop");
   if (node) node.style.display = "block";
@@ -33,20 +52,6 @@ function show() {
 function hide() {
   const node = el("settingsModalBackdrop");
   if (node) node.style.display = "none";
-}
-
-async function fillForm() {
-  const settings = await getUserSettings();
-  const profile = settings?.profile || {};
-  const initialsEl = el("settingsProfileInitials");
-
-  el("settingsProfileFullName").value = profile?.fullName || "";
-  el("settingsProfileEmail").value = profile?.email || "";
-  el("settingsProfilePhone").value = profile?.phone || "";
-  if (initialsEl) {
-    initialsEl.value = normalizeInitials(profile?.initials) || deriveInitials(profile?.fullName || "");
-    initialsEl.dataset.touched = "0";
-  }
 }
 
 function setExchangeInfo(text) {
@@ -69,6 +74,43 @@ function setActiveTab(tabId = "general") {
   });
 }
 
+function setIdoSellStatus(text, type = "neutral") {
+  const box = el("settingsIdoSellStatusBox");
+  const node = el("settingsIdoSellStatusText");
+  if (!box || !node) return;
+
+  box.classList.remove("is-success", "is-error");
+  if (type === "success") box.classList.add("is-success");
+  if (type === "error") box.classList.add("is-error");
+  node.textContent = text || "Brak testu połączenia.";
+}
+
+async function fillForm() {
+  const settings = await getUserSettings();
+  const profile = settings?.profile || {};
+  const initialsEl = el("settingsProfileInitials");
+  const idosell = settings?.integrations?.idosell || {};
+
+  el("settingsProfileFullName").value = profile?.fullName || "";
+  el("settingsProfileEmail").value = profile?.email || "";
+  el("settingsProfilePhone").value = profile?.phone || "";
+  el("settingsIdoSellBaseUrl").value = idosell?.baseUrl || "";
+  el("settingsIdoSellApiKey").value = idosell?.apiKey || "";
+
+  if (initialsEl) {
+    initialsEl.value = normalizeInitials(profile?.initials) || deriveInitials(profile?.fullName || "");
+    initialsEl.dataset.touched = "0";
+  }
+
+  setIdoSellStatus("Brak testu połączenia.");
+}
+
+function buildExchangeLabel(exchange) {
+  return exchange?.lastUpdated
+    ? `${exchange.lastUpdated}${exchange?.isOutdated ? " (zapisane / mogą być nieaktualne)" : ""}`
+    : "brak danych";
+}
+
 export function initSettingsModal({
   onProfileSaved,
   onCounterReset,
@@ -83,10 +125,7 @@ export function initSettingsModal({
   const open = async () => {
     await fillForm();
     const exchange = await getExchangeStatus?.();
-    const label = exchange?.lastUpdated
-      ? `${exchange.lastUpdated}${exchange?.isOutdated ? " (zapisane / mogą być nieaktualne)" : ""}`
-      : "brak danych";
-    setExchangeInfo(label);
+    setExchangeInfo(buildExchangeLabel(exchange));
     setActiveTab("general");
     show();
   };
@@ -104,6 +143,9 @@ export function initSettingsModal({
 
   const fullNameEl = el("settingsProfileFullName");
   const initialsEl = el("settingsProfileInitials");
+  const idosellBaseUrlEl = el("settingsIdoSellBaseUrl");
+  const idosellApiKeyEl = el("settingsIdoSellApiKey");
+
   if (fullNameEl && initialsEl) {
     fullNameEl.addEventListener("input", () => {
       if (String(initialsEl.dataset.touched || "0") === "1") return;
@@ -113,6 +155,10 @@ export function initSettingsModal({
       initialsEl.dataset.touched = initialsEl.value.trim() ? "1" : "0";
     });
   }
+
+  idosellBaseUrlEl?.addEventListener("blur", () => {
+    idosellBaseUrlEl.value = normalizeBaseUrl(idosellBaseUrlEl.value);
+  });
 
   el("btnSettingsSaveProfile")?.addEventListener("click", async () => {
     const fullName = fullNameEl?.value.trim() || "";
@@ -140,13 +186,65 @@ export function initSettingsModal({
     hide();
   });
 
+  el("btnSettingsSaveIdoSell")?.addEventListener("click", async () => {
+    const baseUrl = normalizeBaseUrl(idosellBaseUrlEl?.value);
+    const apiKey = String(idosellApiKeyEl?.value || "").trim();
+
+    await setUserSettings({
+      integrations: {
+        idosell: { baseUrl, apiKey },
+      },
+    });
+
+    if (idosellBaseUrlEl) idosellBaseUrlEl.value = baseUrl;
+    setIdoSellStatus("Dane integracji zapisane. Możesz teraz uruchomić test połączenia.");
+    showToast("Zapisano ustawienia integracji IdoSell.", { type: "info", ms: 2400 });
+  });
+
+  el("btnSettingsTestIdoSell")?.addEventListener("click", async () => {
+    const baseUrl = normalizeBaseUrl(idosellBaseUrlEl?.value);
+    const apiKey = String(idosellApiKeyEl?.value || "").trim();
+
+    if (!baseUrl || !apiKey) {
+      setIdoSellStatus("Uzupełnij Base URL i klucz API przed testem.", "error");
+      showToast("Uzupełnij Base URL i klucz API.", { type: "error", ms: 2800 });
+      return;
+    }
+
+    if (idosellBaseUrlEl) idosellBaseUrlEl.value = baseUrl;
+    setIdoSellStatus("Trwa test połączenia z IdoSell...");
+
+    try {
+      const result = await testIdoSellConnection({ baseUrl, apiKey });
+      const suffix = result?.endpoint
+        ? ` Endpoint: ${result.endpoint}.`
+        : result?.version
+          ? ` Wersja API: v${result.version}.`
+          : "";
+
+      setIdoSellStatus(`${result?.message || "Brak odpowiedzi z testu."}${suffix}`, result?.ok ? "success" : "error");
+
+      if (result?.ok) {
+        await setUserSettings({
+          integrations: {
+            idosell: { baseUrl, apiKey },
+          },
+        });
+        showToast("Połączenie z IdoSell zostało potwierdzone.", { type: "info", ms: 2800 });
+      } else {
+        showToast("Test połączenia z IdoSell nie powiódł się.", { type: "error", ms: 3200 });
+      }
+    } catch (e) {
+      console.warn("IdoSell connection test failed:", e);
+      setIdoSellStatus(`Nie udało się wykonać testu: ${String(e?.message || e)}`, "error");
+      showToast("Nie udało się wykonać testu IdoSell API.", { type: "error", ms: 3200 });
+    }
+  });
+
   el("btnSettingsRefreshRates")?.addEventListener("click", async () => {
     try {
       const exchange = await onRefreshExchangeRates?.();
-      const label = exchange?.lastUpdated
-        ? `${exchange.lastUpdated}${exchange?.isOutdated ? " (zapisane / mogą być nieaktualne)" : ""}`
-        : "brak danych";
-      setExchangeInfo(label);
+      setExchangeInfo(buildExchangeLabel(exchange));
     } catch (e) {
       console.warn("Exchange refresh failed:", e);
       showToast("Nie udało się odświeżyć kursów NBP.", { type: "error", ms: 3200 });

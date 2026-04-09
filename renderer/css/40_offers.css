@@ -265,6 +265,12 @@ button i.fa-solid {
   margin-top:14px;
 }
 
+.settingsModalActionsSplit{
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+}
+
 .settingsDangerSection{
   display:flex;
   flex-direction:column;
@@ -292,6 +298,66 @@ button i.fa-solid {
   font-size: 12px;
   line-height: 1.45;
   max-width: 420px;
+}
+
+.settingsIntegrationStatus{
+  margin-top:14px;
+  padding:14px 16px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.03);
+}
+
+.settingsIntegrationHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  margin:0 0 14px;
+}
+
+.settingsIntegrationBrand{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:10px 14px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.08);
+  background:linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.06));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 10px 24px rgba(0,0,0,.18);
+  backdrop-filter: blur(4px);
+}
+
+.settingsIntegrationLogo{
+  display:block;
+  max-width:180px;
+  width:100%;
+  height:auto;
+  opacity:.7;
+  filter: brightness(1.18) contrast(1.08) drop-shadow(0 1px 1px rgba(0,0,0,.18));
+  pointer-events:none;
+  user-select:none;
+}
+
+.settingsIntegrationStatus.is-success{
+  border-color: rgba(67,201,124,.28);
+  background: rgba(67,201,124,.08);
+}
+
+.settingsIntegrationStatus.is-error{
+  border-color: rgba(220,72,72,.3);
+  background: rgba(220,72,72,.08);
+}
+
+.settingsIntegrationStatusTitle{
+  font-weight:800;
+  margin-bottom:6px;
+}
+
+.settingsIntegrationStatusText{
+  color: var(--muted);
+  line-height:1.45;
+  word-break:break-word;
 }
 
 @media (max-width: 900px){

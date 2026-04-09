@@ -19,3 +19,10 @@ export async function clearAllUserData() {
   if (!window.esusAPI?.settingsClearAllData) return { ...FALLBACK };
   return await window.esusAPI.settingsClearAllData();
 }
+
+export async function testIdoSellConnection(payload) {
+  if (!window.esusAPI?.settingsTestIdoSellConnection) {
+    throw new Error("Test połączenia API nie jest dostępny.");
+  }
+  return await window.esusAPI.settingsTestIdoSellConnection(payload);
+}

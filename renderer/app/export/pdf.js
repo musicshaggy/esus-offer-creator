@@ -79,6 +79,27 @@ function getPdfLang() {
   return ["pl", "en", "de", "hu"].includes(lang) ? lang : "pl";
 }
 
+function getOfferVersionTextForPdf(lang) {
+  const versionAt =
+    store.offer?.lastItemsEditedAt ||
+    new Date().toISOString();
+
+  const date = new Date(versionAt);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const formatted = date.toLocaleDateString("pl-PL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
+  if ((lang || "pl").toLowerCase() === "pl") {
+    return `Wersja z dnia ${formatted}`;
+  }
+
+  return `Version dated ${formatted}`;
+}
+
 // 🔑 waluta dokumentu z UI (dostosuj ID jeśli u Ciebie inne)
 function getDocCurrency() {
   const v =
@@ -661,6 +682,17 @@ export async function generatePdf({ onBefore } = {}) {
     doc.text(pdfSafeText(subtitle), margin, titleBottomY + 4.2, { align: "left" }); // ✅ mniejszy odstęp
     doc.setTextColor(0);
     headerBlockBottomY = titleBottomY + 4.2;
+  }
+
+  const versionText = getOfferVersionTextForPdf(lang);
+  if (versionText) {
+    const versionY = headerBlockBottomY + 4.8;
+    doc.setFont(fontName, "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(120, 130, 142);
+    doc.text(pdfSafeText(versionText), margin, versionY, { align: "left" });
+    doc.setTextColor(0);
+    headerBlockBottomY = versionY;
   }
 
   // ✅ mniejszy odstęp do tabeli

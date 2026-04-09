@@ -35,6 +35,7 @@ import {
   scheduleAutosave,
   saveNow,
   setActiveOffer,
+  getActiveOffer,
   flushAutosave,
   commitAndSaveNow, // ✅ DODANE
 } from "./offers/offersController.js";
@@ -54,6 +55,37 @@ fetchExchangeRates().then((ex) => {
 
 let cameFromMainPage = false;
 let currentOfferId = null; // ID aktualnie otwartej oferty w formularzu
+
+function formatOfferVersionDateTime(value) {
+  if (!value) return "Brak zmian w pozycjach";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Brak zmian w pozycjach";
+  return date.toLocaleString("pl-PL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderOfferVersionInfo(payload = getActiveOffer()) {
+  const node = document.getElementById("offerVersionInfo");
+  if (!node) return;
+
+  const versionAt =
+    payload?.meta?.lastItemsEditedAt ||
+    payload?.meta?.updatedAt ||
+    payload?.meta?.createdAt ||
+    "";
+
+  const label = versionAt
+    ? `Ostatnia edycja pozycji: ${formatOfferVersionDateTime(versionAt)}`
+    : "Ostatnia edycja pozycji: brak danych";
+
+  node.textContent = label;
+  node.title = label;
+}
 
 function syncViewportMetrics() {
   const header = document.querySelector("header");
@@ -193,7 +225,8 @@ async function autosaveActiveOffer() {
       payload.fields[n.id] = n.type === "checkbox" ? !!n.checked : n.value;
     });
 
-    await saveNow(payload);
+    const saved = await saveNow(payload);
+    renderOfferVersionInfo(saved);
   } catch (e) {
     console.warn("Autosave failed:", e);
   }
@@ -223,12 +256,18 @@ function wireAddItemButtons() {
 
 function wirePdfButton() {
   el("btnPdf")?.addEventListener("click", async () => {
+    try {
+      await commitAndSaveNow({ getItems, getTotals: getTotalsUI });
+      renderOfferVersionInfo();
+    } catch (e) {
+      console.warn("Pre-PDF save failed:", e);
+    }
+
     await generatePdf({
       onBefore: () => {
         recalcTotalsUI();
       },
     });
-    scheduleAutosave(autosaveActiveOffer);
   });
 }
 
@@ -499,6 +538,7 @@ async function init() {
 
   wireTermsUi();
   wireInvoiceDaysInput();
+  renderOfferVersionInfo();
 
   renderItems({
     onTotalsChanged: recalcTotalsUI,
@@ -536,6 +576,8 @@ async function init() {
 
   if (window.esusAPI) {
     const payload = await bootLastOrCreateNew(deps);
+    setActiveOffer(payload);
+    renderOfferVersionInfo(payload);
     if (el("offerNumberPreview")) el("offerNumberPreview").textContent = payload?.meta?.offerNo || "—";
 
     const offersCtl = initOffersSubpage({
@@ -549,6 +591,7 @@ async function init() {
         if (el("offerNumberPreview")) {
           el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
         }
+        renderOfferVersionInfo(p);
 
         showPage("mainPage");
 
@@ -566,6 +609,7 @@ async function init() {
         if (el("offerNumberPreview")) {
           el("offerNumberPreview").textContent = p?.meta?.offerNo || p?.offerNo || "—";
         }
+        renderOfferVersionInfo(p);
 
         const fields = p?.fields || {};
         ["custName", "custNip", "custAddr", "custContact"].forEach((id) => {
@@ -674,6 +718,7 @@ async function init() {
       if (el("offerNumberPreview")) {
         el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
       }
+      renderOfferVersionInfo(p);
 
       showPage("mainPage");
 
