@@ -378,6 +378,7 @@ function wireTermsUi() {
   const wrap = el("invoiceDaysWrap");
   const shipNet = el("shippingNet");
   const shipNote = el("shippingNote");
+  const validUntil = el("validUntil");
 
   const refresh = () => {
     if (pm && wrap) {
@@ -387,6 +388,7 @@ function wireTermsUi() {
       const v = Number(shipNet.value || 0);
       shipNote.style.display = v === 0 ? "block" : "none";
     }
+    refreshValidUntilWarning();
   };
 
   pm?.addEventListener("change", () => {
@@ -397,6 +399,8 @@ function wireTermsUi() {
     refresh();
     scheduleAutosave(autosaveActiveOffer);
   });
+  validUntil?.addEventListener("input", refresh);
+  validUntil?.addEventListener("change", refresh);
 
   refresh();
 }
@@ -483,6 +487,19 @@ function setValidUntilToday() {
   const node = formEl("validUntil");
   if (!node) return;
   node.value = todayYMD();
+  refreshValidUntilWarning();
+}
+
+function isPastYmd(value) {
+  const ymd = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return false;
+  return ymd < todayYMD();
+}
+
+function refreshValidUntilWarning() {
+  const node = formEl("validUntil");
+  if (!node) return;
+  node.classList.toggle("is-expired-date", isPastYmd(node.value));
 }
 
 function clearFormFieldsForNewOffer() {
@@ -625,8 +642,6 @@ async function init() {
           if (node.type === "checkbox") node.checked = !!val;
           else node.value = val ?? "";
         });
-		
-		setValidUntilToday();
         applyInvoiceDaysToFormValue(fields.invoiceDays);
 
         setItems((p.items || []).map(normalizeItem));

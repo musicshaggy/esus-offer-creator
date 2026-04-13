@@ -76,6 +76,17 @@
       border-color: rgba(0,154,255,.75);
       box-shadow: 0 0 0 4px rgba(0,154,255,.12)
     }
+    input.is-expired-date{
+      border-color: rgba(255,77,77,.58);
+      background: rgba(255,77,77,.08);
+      box-shadow: inset 0 0 0 1px rgba(255,77,77,.12);
+    }
+    input.is-expired-date:focus{
+      border-color: rgba(255,77,77,.82);
+      box-shadow:
+        inset 0 0 0 1px rgba(255,77,77,.16),
+        0 0 0 4px rgba(255,77,77,.12);
+    }
     input:-webkit-autofill,
     input:-webkit-autofill:hover,
     input:-webkit-autofill:focus,
