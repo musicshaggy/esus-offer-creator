@@ -79,6 +79,33 @@ function getPdfLang() {
   return ["pl", "en", "de", "hu"].includes(lang) ? lang : "pl";
 }
 
+function getOfferVersionTextForPdf(lang) {
+  const versionAt =
+    store.offer?.lastItemsEditedAt ||
+    new Date().toISOString();
+
+  const date = new Date(versionAt);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const formatted = date.toLocaleDateString("pl-PL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
+  if ((lang || "pl").toLowerCase() === "pl") {
+    return `Wersja z dnia ${formatted}`;
+  }
+
+  return `Version dated ${formatted}`;
+}
+
+function getContinuationText(lang) {
+  return (lang || "pl").toLowerCase() === "pl"
+    ? "Kontynuacja na kolejnej stronie"
+    : "Continued on next page";
+}
+
 // 🔑 waluta dokumentu z UI (dostosuj ID jeśli u Ciebie inne)
 function getDocCurrency() {
   const v =
@@ -127,6 +154,29 @@ function buildCurrencyNoteText(lang, docCcy, exchangeMeta, sumGross) {
     `Ceny w ofercie wyrażono w ${docCcy}. Do przeliczeń przyjęto kurs średni NBP z dnia ${exchangeMeta.lastUpdated}: 1 ${docCcy} = ${formatRateForPdf(rate)} PLN.`,
     `Wartość oferty brutto w przeliczeniu: ${grossPlnText}.`
   ];
+}
+
+function drawPageOverlays(doc, { fontName, lang, pageW, pageH, margin }) {
+  const totalPages = doc.internal.getNumberOfPages();
+  const continuationText = getContinuationText(lang);
+
+  for (let page = 1; page <= totalPages; page += 1) {
+    doc.setPage(page);
+    doc.setFont(fontName, "normal");
+
+    doc.setFontSize(8);
+    doc.setTextColor(145, 154, 168);
+    doc.text(`${page}/${totalPages}`, pageW - margin, 8, { align: "right" });
+
+    if (page < totalPages) {
+      doc.setFontSize(7.5);
+      doc.setTextColor(120, 130, 142);
+      doc.text(pdfSafeText(continuationText), pageW - margin, pageH - 8, { align: "right" });
+    }
+  }
+
+  doc.setPage(totalPages);
+  doc.setTextColor(0);
 }
 
 function formatCustomerBlock(lang) {
@@ -663,6 +713,17 @@ export async function generatePdf({ onBefore } = {}) {
     headerBlockBottomY = titleBottomY + 4.2;
   }
 
+  const versionText = getOfferVersionTextForPdf(lang);
+  if (versionText) {
+    const versionY = headerBlockBottomY + 4.8;
+    doc.setFont(fontName, "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(120, 130, 142);
+    doc.text(pdfSafeText(versionText), margin, versionY, { align: "left" });
+    doc.setTextColor(0);
+    headerBlockBottomY = versionY;
+  }
+
   // ✅ mniejszy odstęp do tabeli
   const headerStartForTable = headerBlockBottomY + (isEstimate ? 7 : 5);
 
@@ -982,6 +1043,7 @@ export async function generatePdf({ onBefore } = {}) {
   }
 
   doc.setTextColor(0);
+  drawPageOverlays(doc, { fontName, lang, pageW, pageH, margin });
 
   const prefix = getFilePrefix(lang);
   doc.save(`${prefix}_${offerNo.replaceAll("/", "-")}.pdf`);

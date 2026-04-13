@@ -16,20 +16,48 @@ function ensureToastEl() {
   el.className = "appToast";
   el.style.display = "none";
 
-  el.innerHTML = `
-    <div class="appToastBody">
-      <div class="appToastText"></div>
-      <div class="appToastProgress" style="display:none;">
-        <div class="appToastProgressBar"><div class="appToastProgressFill" style="width:0%"></div></div>
-        <div class="appToastProgressPct">0%</div>
-      </div>
-    </div>
-    <div class="appToastActions"></div>
-    <button type="button" class="appToastClose" aria-label="Zamknij">×</button>
-  `;
+  const body = document.createElement("div");
+  body.className = "appToastBody";
+
+  const text = document.createElement("div");
+  text.className = "appToastText";
+  body.appendChild(text);
+
+  const progress = document.createElement("div");
+  progress.className = "appToastProgress";
+  progress.style.display = "none";
+
+  const progressBar = document.createElement("div");
+  progressBar.className = "appToastProgressBar";
+
+  const progressFill = document.createElement("div");
+  progressFill.className = "appToastProgressFill";
+  progressFill.style.width = "0%";
+  progressBar.appendChild(progressFill);
+
+  const progressPct = document.createElement("div");
+  progressPct.className = "appToastProgressPct";
+  progressPct.textContent = "0%";
+
+  progress.appendChild(progressBar);
+  progress.appendChild(progressPct);
+  body.appendChild(progress);
+
+  const actions = document.createElement("div");
+  actions.className = "appToastActions";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "appToastClose";
+  closeBtn.setAttribute("aria-label", "Zamknij");
+  closeBtn.textContent = "×";
+
+  el.appendChild(body);
+  el.appendChild(actions);
+  el.appendChild(closeBtn);
 
   document.body.appendChild(el);
-  el.querySelector(".appToastClose")?.addEventListener("click", hideToast);
+  closeBtn.addEventListener("click", hideToast);
 
   _toastEl = el;
   return el;
@@ -44,7 +72,6 @@ function clearTimer() {
 
 function restartAnim(toast) {
   toast.classList.remove("is-show");
-  // restart animation
   void toast.offsetWidth;
   toast.classList.add("is-show");
 }
@@ -57,7 +84,7 @@ export function showToast(message, { type = "info", ms = 3000 } = {}) {
 
   _progressActive = false;
   if (progEl) progEl.style.display = "none";
-  if (actionsEl) actionsEl.innerHTML = "";
+  if (actionsEl) actionsEl.textContent = "";
 
   if (textEl) textEl.textContent = String(message ?? "");
 
@@ -96,7 +123,7 @@ export function showToastAction(
   }
 
   if (actionsEl) {
-    actionsEl.innerHTML = "";
+    actionsEl.textContent = "";
 
     if (actionLabel && typeof onAction === "function") {
       const btn = document.createElement("button");
@@ -147,7 +174,7 @@ export function showToastProgress(title, { type = "info" } = {}) {
   const fill = toast.querySelector(".appToastProgressFill");
   const pct = toast.querySelector(".appToastProgressPct");
 
-  if (actionsEl) actionsEl.innerHTML = "";
+  if (actionsEl) actionsEl.textContent = "";
   if (textEl) textEl.textContent = String(title ?? "");
 
   if (progEl) progEl.style.display = "flex";
@@ -184,7 +211,7 @@ export function hideToast() {
   const actionsEl = toast.querySelector(".appToastActions");
   const progEl = toast.querySelector(".appToastProgress");
 
-  if (actionsEl) actionsEl.innerHTML = "";
+  if (actionsEl) actionsEl.textContent = "";
   if (progEl) progEl.style.display = "none";
 
   toast.style.display = "none";

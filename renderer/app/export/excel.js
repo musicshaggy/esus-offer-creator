@@ -24,6 +24,12 @@ export function initExcelExport({ onStateChanged } = {}) {
       items: store.items,
       vatRate: VAT_RATE,
       shippingNet: document.getElementById("shippingNet")?.value ?? 0,
+      offerCurrency:
+        document.getElementById("offerCurrency")?.value ??
+        store.offer?.ccy ??
+        store.settings?.offerCcy ??
+        "PLN",
+      exchangeRates: store.exchange?.rates || {},
       offerNo,
       docLabel: (document.getElementById("isEstimate")?.checked ? "Wycena szacunkowa" : "Oferta"),
       createdAt: new Date(),

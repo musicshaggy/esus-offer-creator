@@ -9,3 +9,20 @@ export async function setUserSettings(patch) {
   if (!window.esusAPI?.settingsSet) return { ...FALLBACK, ...patch };
   return await window.esusAPI.settingsSet(patch);
 }
+
+export async function resetUserCounter() {
+  if (!window.esusAPI?.settingsResetCounter) return { ...FALLBACK };
+  return await window.esusAPI.settingsResetCounter();
+}
+
+export async function clearAllUserData() {
+  if (!window.esusAPI?.settingsClearAllData) return { ...FALLBACK };
+  return await window.esusAPI.settingsClearAllData();
+}
+
+export async function testIdoSellConnection(payload) {
+  if (!window.esusAPI?.settingsTestIdoSellConnection) {
+    throw new Error("Test połączenia API nie jest dostępny.");
+  }
+  return await window.esusAPI.settingsTestIdoSellConnection(payload);
+}

@@ -76,6 +76,115 @@
       border-color: rgba(0,154,255,.75);
       box-shadow: 0 0 0 4px rgba(0,154,255,.12)
     }
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus,
+    textarea:-webkit-autofill,
+    textarea:-webkit-autofill:hover,
+    textarea:-webkit-autofill:focus,
+    select:-webkit-autofill,
+    select:-webkit-autofill:hover,
+    select:-webkit-autofill:focus{
+      -webkit-text-fill-color: var(--text);
+      caret-color: var(--text);
+      border: 1px solid var(--line);
+      -webkit-box-shadow: 0 0 0 1000px rgba(0,0,0,.12) inset;
+      box-shadow: 0 0 0 1000px rgba(0,0,0,.12) inset;
+      transition: background-color 99999s ease-in-out 0s;
+    }
+    input:-webkit-autofill:focus,
+    textarea:-webkit-autofill:focus,
+    select:-webkit-autofill:focus{
+      border-color: rgba(0,154,255,.75);
+      -webkit-box-shadow:
+        0 0 0 1000px rgba(0,0,0,.12) inset,
+        0 0 0 4px rgba(0,154,255,.12);
+      box-shadow:
+        0 0 0 1000px rgba(0,0,0,.12) inset,
+        0 0 0 4px rgba(0,154,255,.12);
+    }
+    .clientNipRow{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto auto;
+      gap:4px;
+      align-items:center;
+    }
+    .clientNipField{
+      position:relative;
+    }
+    .clientNipField input{
+      padding-right:36px;
+    }
+    .clientNipActions{
+      position:absolute;
+      top:50%;
+      right:10px;
+      transform:translateY(-50%);
+      display:flex;
+      align-items:center;
+    }
+    .clientNipSpinner{
+      width:14px;
+      height:14px;
+      border-radius:999px;
+      border:2px solid rgba(255,255,255,.18);
+      border-top-color: rgba(0,154,255,.9);
+      opacity:0;
+      pointer-events:none;
+      transition:opacity .15s ease;
+    }
+    .clientNipSpinner.is-active{
+      opacity:1;
+      animation: clientNipSpin .8s linear infinite;
+    }
+    .clientNipIconBtn{
+      appearance:none;
+      border:0;
+      background:transparent;
+      color:var(--muted);
+      padding:0;
+      width:18px;
+      height:18px;
+      border-radius:999px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      opacity:.75;
+    }
+    .clientNipDeleteBtn{
+        width:20px;
+        height:20px;
+        border-radius:12px;
+        background:transparent;
+        border:0;
+        flex:0 0 20px;
+        padding:0;
+      }
+    .clientNipLookupBtn{
+        width:20px;
+        height:20px;
+        border-radius:12px;
+        background:transparent;
+        border:0;
+        flex:0 0 20px;
+        padding:0;
+        margin-left:1px;
+      }
+    .clientNipIconBtn:hover{
+      color:var(--text);
+      opacity:1;
+      transform:none;
+      border:0;
+      background:rgba(255,255,255,.06);
+    }
+    .clientNipIconBtn:focus{
+      outline:none;
+      box-shadow:0 0 0 4px rgba(0,154,255,.12);
+    }
+    @keyframes clientNipSpin{
+      to{ transform:rotate(360deg); }
+    }
     .hint{color: var(--muted); font-size:12px; margin-top:8px; line-height:1.4;}
     .offerNoBox{
       display:flex; gap:10px; align-items:end; flex-wrap:wrap;

@@ -1,7 +1,8 @@
-import { money, ymdToPL, escapeHtml, toNumber } from "../utils/format.js";
+import { money, ymdToPL, toNumber } from "../utils/format.js";
 import { VAT_RATE } from "../config/constants.js";
 import { itemNetAfterDiscount } from "../calc/pricing.js";
 import { showToast, showToastAction } from "../ui/toast.js";
+import { getExchange } from "../state/store.js";
 
 function pickOfferNo(row) {
   return (
@@ -58,6 +59,34 @@ function pickUpdated(row) {
   }
 }
 
+function pickUpdatedAt(row) {
+  return (
+    row?.meta?.updatedAt ||
+    row?.updatedAt ||
+    row?.updated ||
+    row?.modifiedAt ||
+    row?.ts ||
+    row?.meta?.createdAt ||
+    row?.createdAt ||
+    ""
+  );
+}
+
+function pickCreatedAt(row) {
+  return (
+    row?.meta?.createdAt ||
+    row?.createdAt ||
+    row?.meta?.updatedAt ||
+    row?.updatedAt ||
+    ""
+  );
+}
+
+function dateScore(value) {
+  const ts = Date.parse(String(value || ""));
+  return Number.isFinite(ts) ? ts : 0;
+}
+
 function pickOfferCcy(row) {
   return String(row?.offerCcy || row?.meta?.offerCcy || "PLN").toUpperCase();
 }
@@ -76,6 +105,29 @@ function pickGross(row) {
   const n = Number(v);
   const ccy = pickOfferCcy(row);
   return Number.isFinite(n) ? money(n, ccy) : "—";
+}
+
+function grossScorePln(row) {
+  const gross = Number(row?.gross ?? 0);
+  if (!Number.isFinite(gross)) return 0;
+
+  const ccy = pickOfferCcy(row);
+  if (ccy === "PLN") return gross;
+
+  const ex = getExchange();
+  const rate = Number(ex?.rates?.[ccy]);
+  return Number.isFinite(rate) ? gross * rate : gross;
+}
+
+function compareNumber(a, b, dir = "asc") {
+  const left = Number(a || 0);
+  const right = Number(b || 0);
+  return dir === "asc" ? left - right : right - left;
+}
+
+function compareText(a, b, dir = "asc") {
+  const cmp = String(a || "").localeCompare(String(b || ""), "pl", { sensitivity: "base" });
+  return dir === "asc" ? cmp : -cmp;
 }
 
 function cloneTopbarHeader() {
@@ -112,6 +164,18 @@ function qs(id) { return document.getElementById(id); }
 function setCount(n) { qs("offersCount").textContent = String(n); }
 function setEmpty(isEmpty) { qs("offersEmpty").style.display = isEmpty ? "block" : "none"; }
 
+function resetOffersTableScroll() {
+  const wrap = qs("offersTableWrap");
+  if (!wrap) return;
+
+  wrap.scrollLeft = 0;
+  wrap.scrollTop = 0;
+
+  requestAnimationFrame(() => {
+    wrap.scrollLeft = 0;
+  });
+}
+
 function renderRows(rows, { onOpen, onDuplicate, onDelete }) {
   const tbody = qs("offersTbody");
   if (!tbody) return;
@@ -130,10 +194,10 @@ function renderRows(rows, { onOpen, onDuplicate, onDelete }) {
       row?.id || row?.key || row?.offerId || row?.offerUID || row?.offerUuid ||
       row?.meta?.id || row?.meta?.offerId || null;
 
-    const offerNo = escapeHtml(pickOfferNo(row));
-    const client = escapeHtml(pickClient(row));
-    const updated = escapeHtml(pickUpdated(row));
-    const gross = escapeHtml(pickGross(row));
+    const offerNo = String(pickOfferNo(row) || "—");
+    const client = String(pickClient(row) || "—");
+    const updated = String(pickUpdated(row) || "—");
+    const gross = String(pickGross(row) || "—");
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -251,6 +315,7 @@ async function enrichOffers(list) {
 
         // updatedAt
         r.updatedAt = r.updatedAt || p?.meta?.updatedAt || p?.meta?.createdAt || "";
+        r.createdAt = r.createdAt || p?.meta?.createdAt || r.updatedAt || "";
       } catch (e) {
         console.warn("enrich offer failed", id, e);
       }
@@ -277,14 +342,57 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
   const btnRefresh = qs("btnOffersRefresh");
   const btnBack = qs("btnOffersBack");
   const btnNew = qs("btnOffersNew");
+  const sortButtons = Array.from(document.querySelectorAll(".offers-sort-btn"));
 
   cloneTopbarHeader();
 
   let all = [];
+  let sortState = { key: "created", dir: "desc" };
 
   async function refresh() {
     all = await loadOffers();
     applyFilter();
+    resetOffersTableScroll();
+  }
+
+  function syncSortUi() {
+    for (const btn of sortButtons) {
+      const active = btn.dataset.sortKey === sortState.key;
+      btn.classList.toggle("is-active", active);
+      const indicator = btn.querySelector(".offers-sort-indicator");
+      if (!indicator) continue;
+      indicator.textContent = active ? (sortState.dir === "asc" ? "↑" : "↓") : "↕";
+    }
+  }
+
+  function sortRows(rows) {
+    const copy = Array.isArray(rows) ? rows.slice() : [];
+
+    copy.sort((a, b) => {
+      if (sortState.key === "client") {
+        const clientCmp = compareText(pickClient(a), pickClient(b), sortState.dir);
+        if (clientCmp !== 0) return clientCmp;
+        return compareNumber(dateScore(pickCreatedAt(a)), dateScore(pickCreatedAt(b)), "desc");
+      }
+
+      if (sortState.key === "updated") {
+        const updatedCmp = compareNumber(dateScore(pickUpdatedAt(a)), dateScore(pickUpdatedAt(b)), sortState.dir);
+        if (updatedCmp !== 0) return updatedCmp;
+        return compareNumber(dateScore(pickCreatedAt(a)), dateScore(pickCreatedAt(b)), "desc");
+      }
+
+      if (sortState.key === "gross") {
+        const grossCmp = compareNumber(grossScorePln(a), grossScorePln(b), sortState.dir);
+        if (grossCmp !== 0) return grossCmp;
+        return compareNumber(dateScore(pickCreatedAt(a)), dateScore(pickCreatedAt(b)), "desc");
+      }
+
+      const createdCmp = compareNumber(dateScore(pickCreatedAt(a)), dateScore(pickCreatedAt(b)), sortState.dir);
+      if (createdCmp !== 0) return createdCmp;
+      return compareNumber(dateScore(pickUpdatedAt(a)), dateScore(pickUpdatedAt(b)), "desc");
+    });
+
+    return copy;
   }
 
   function applyFilter() {
@@ -297,7 +405,10 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
           return a.includes(q) || b.includes(q);
         });
 
-    renderRows(rows, {
+    const sortedRows = sortRows(rows);
+    syncSortUi();
+
+    renderRows(sortedRows, {
       onOpen: async (row, rowId) => {
         const id = rowId || row?.id || row?.key || row?.offerId;
         try {
@@ -354,12 +465,30 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
         });
       },
     });
+
+    resetOffersTableScroll();
   }
 
   btnRefresh?.addEventListener("click", refresh);
   btnBack?.addEventListener("click", () => onBack?.());
   btnNew?.addEventListener("click", () => onNewOffer?.());
   searchEl?.addEventListener("input", applyFilter);
+  sortButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = String(btn.dataset.sortKey || "created");
+      if (sortState.key === key) {
+        sortState = { key, dir: sortState.dir === "asc" ? "desc" : "asc" };
+      } else {
+        sortState = {
+          key,
+          dir: key === "client" ? "asc" : "desc",
+        };
+      }
+      applyFilter();
+    });
+  });
+
+  window.addEventListener("resize", resetOffersTableScroll);
 
   return { refresh };
 }

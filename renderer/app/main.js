@@ -1,5 +1,5 @@
 import { el, q } from "./ui/dom.js";
-import { todayYMD } from "./utils/format.js";
+import { todayYMD, escapeHtml, money } from "./utils/format.js";
 
 import { store, setItems, getItems, addItem } from "./state/store.js";
 import { recalcTotalsUI, getTotalsUI } from "./ui/totalsPanel.js";
@@ -9,6 +9,8 @@ import { ensureUserProfile, applyProfileToForm } from "./ui/profileModal.js";
 import { refreshOfferPreview, loadUserInitialsAndSeq, persistInitials } from "./ui/offerNumber.js";
 import { initOffersSubpage } from "./ui/offersPage.js";
 import { renderItems, recalcAllRowsUI } from "./ui/itemsTable.js";
+import { initClientSuggestions } from "./ui/clientSuggestions.js";
+import { initSettingsModal } from "./ui/settingsModal.js";
 
 import { clearSavedState, loadStateFromStorage } from "./state/persistence.js";
 import { generatePdf } from "./export/pdf.js";
@@ -24,6 +26,7 @@ import {
 import { fetchExchangeRates, loadCachedExchangeRates } from "./utils/exchangeRates.js";
 import { setExchange } from "./state/store.js";
 import { changeOfferCurrency } from "./utils/offerCurrency.js";
+import { itemNetAfterDiscount } from "./calc/pricing.js";
 
 import {
   bootLastOrCreateNew,
@@ -32,6 +35,7 @@ import {
   scheduleAutosave,
   saveNow,
   setActiveOffer,
+  getActiveOffer,
   flushAutosave,
   commitAndSaveNow, // ✅ DODANE
 } from "./offers/offersController.js";
@@ -52,6 +56,43 @@ fetchExchangeRates().then((ex) => {
 let cameFromMainPage = false;
 let currentOfferId = null; // ID aktualnie otwartej oferty w formularzu
 
+function formatOfferVersionDateTime(value) {
+  if (!value) return "Brak zmian w pozycjach";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Brak zmian w pozycjach";
+  return date.toLocaleString("pl-PL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderOfferVersionInfo(payload = getActiveOffer()) {
+  const node = document.getElementById("offerVersionInfo");
+  if (!node) return;
+
+  const versionAt =
+    payload?.meta?.lastItemsEditedAt ||
+    payload?.meta?.updatedAt ||
+    payload?.meta?.createdAt ||
+    "";
+
+  const label = versionAt
+    ? `Ostatnia edycja pozycji: ${formatOfferVersionDateTime(versionAt)}`
+    : "Ostatnia edycja pozycji: brak danych";
+
+  node.textContent = label;
+  node.title = label;
+}
+
+function syncViewportMetrics() {
+  const header = document.querySelector("header");
+  const headerH = header?.offsetHeight || 0;
+  document.documentElement.style.setProperty("--app-header-h", `${headerH}px`);
+}
+
 function showPage(pageId) {
   const mainPage = document.getElementById("mainPage");
   const offersPage = document.getElementById("offersPage");
@@ -63,15 +104,19 @@ function showPage(pageId) {
 
   mainPage.classList.toggle("is-active", pageId === "mainPage");
   offersPage.classList.toggle("is-active", pageId === "offersPage");
+  document.body.classList.toggle("offers-page-active", pageId === "offersPage");
+  syncViewportMetrics();
 
   // Shared header action sets (single header for both views)
   const actionsMain = document.getElementById("headerActionsMain");
   const actionsOffers = document.getElementById("headerActionsOffers");
   const headerTitle = document.getElementById("headerTitle");
   const btnBack = document.getElementById("btnOffersBack");
+  const btnSettings = document.getElementById("btnAppSettings");
 
   if (actionsMain) actionsMain.style.display = pageId === "mainPage" ? "flex" : "none";
   if (actionsOffers) actionsOffers.style.display = pageId === "offersPage" ? "flex" : "none";
+  if (btnSettings) btnSettings.style.display = pageId === "offersPage" ? "inline-flex" : "none";
 
   if (headerTitle) {
     headerTitle.textContent = pageId === "offersPage" ? "Oferty" : "Generator wyceny (PDF)";
@@ -147,6 +192,8 @@ function initOfferSettingsUI() {
 
 document.addEventListener("DOMContentLoaded", () => {
   initOfferSettingsUI();
+  syncViewportMetrics();
+  window.addEventListener("resize", syncViewportMetrics);
 });
 
 function normalizeItem(it = {}) {
@@ -178,7 +225,8 @@ async function autosaveActiveOffer() {
       payload.fields[n.id] = n.type === "checkbox" ? !!n.checked : n.value;
     });
 
-    await saveNow(payload);
+    const saved = await saveNow(payload);
+    renderOfferVersionInfo(saved);
   } catch (e) {
     console.warn("Autosave failed:", e);
   }
@@ -208,12 +256,95 @@ function wireAddItemButtons() {
 
 function wirePdfButton() {
   el("btnPdf")?.addEventListener("click", async () => {
+    try {
+      await commitAndSaveNow({ getItems, getTotals: getTotalsUI });
+      renderOfferVersionInfo();
+    } catch (e) {
+      console.warn("Pre-PDF save failed:", e);
+    }
+
     await generatePdf({
       onBefore: () => {
         recalcTotalsUI();
       },
     });
-    scheduleAutosave(autosaveActiveOffer);
+  });
+}
+
+function buildItemsClipboardPayload() {
+  const currency = String(store.offer?.ccy || store.settings?.offerCcy || "PLN").toUpperCase();
+  const rows = store.items.map((it) => {
+    const qty = Math.max(1, parseInt(it?.qty || 1, 10) || 1);
+    const lineNet = itemNetAfterDiscount(it) * qty;
+    return {
+      desc: String(it?.desc || "").trim() || "Pozycja bez nazwy",
+      qty,
+      lineNet,
+    };
+  });
+
+  const sumNet = rows.reduce((acc, row) => acc + row.lineNet, 0);
+
+  const htmlRows = rows.map((row) => `
+      <tr>
+        <td style="padding:8px 10px;border:1px solid #d9dee8;text-align:left;">${escapeHtml(row.desc)}</td>
+        <td style="padding:8px 10px;border:1px solid #d9dee8;text-align:center;">${row.qty}</td>
+        <td style="padding:8px 10px;border:1px solid #d9dee8;text-align:right;white-space:nowrap;">${escapeHtml(money(row.lineNet, currency))}</td>
+      </tr>`).join("");
+
+  const html = `
+<table style="border-collapse:collapse;width:100%;max-width:760px;font-family:Segoe UI, Arial, sans-serif;font-size:14px;color:#1f2937;">
+  <thead>
+    <tr>
+      <th style="padding:8px 10px;border:1px solid #cfd6e4;background:#f4f7fb;text-align:left;">Nazwa</th>
+      <th style="padding:8px 10px;border:1px solid #cfd6e4;background:#f4f7fb;text-align:center;">Ilość</th>
+      <th style="padding:8px 10px;border:1px solid #cfd6e4;background:#f4f7fb;text-align:right;">Kwota netto</th>
+    </tr>
+  </thead>
+  <tbody>${htmlRows}
+    <tr>
+      <td colspan="2" style="padding:10px;border:1px solid #cfd6e4;background:#f8fafc;text-align:right;font-weight:700;">Suma netto</td>
+      <td style="padding:10px;border:1px solid #cfd6e4;background:#f8fafc;text-align:right;font-weight:700;white-space:nowrap;">${escapeHtml(money(sumNet, currency))}</td>
+    </tr>
+  </tbody>
+</table>`.trim();
+
+  const text = [
+    "Nazwa\tIlość\tKwota netto",
+    ...rows.map((row) => `${row.desc}\t${row.qty}\t${money(row.lineNet, currency)}`),
+    `Suma netto\t\t${money(sumNet, currency)}`,
+  ].join("\n");
+
+  return { html, text };
+}
+
+function wireCopyItemsHtmlButton() {
+  el("btnCopyItemsHtml")?.addEventListener("click", async () => {
+    if (!store.items.length) {
+      showToast("Brak pozycji do skopiowania.", { type: "error", ms: 2600 });
+      return;
+    }
+
+    const { html, text } = buildItemsClipboardPayload();
+
+    try {
+      if (window.ClipboardItem && navigator.clipboard?.write) {
+        const item = new window.ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([text], { type: "text/plain" }),
+        });
+        await navigator.clipboard.write([item]);
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        throw new Error("Clipboard API not available");
+      }
+
+      showToast("Skopiowano HTML tabeli pozycji do schowka.", { type: "info", ms: 2600 });
+    } catch (err) {
+      console.warn("Copy items HTML failed:", err);
+      showToast("Nie udało się skopiować tabeli do schowka.", { type: "error", ms: 3200 });
+    }
   });
 }
 
@@ -289,6 +420,25 @@ function clearCustomerFields() {
       node.dispatchEvent(new Event("input", { bubbles: true }));
       node.dispatchEvent(new Event("change", { bubbles: true }));
     } catch {}
+  }
+}
+
+function applyProfileToCurrentForm(profile, { force = false } = {}) {
+  if (!profile) return;
+
+  const mappings = [
+    ["creatorName", profile.fullName || ""],
+    ["creatorEmail", profile.email || ""],
+    ["creatorPhone", profile.phone || ""],
+  ];
+
+  for (const [id, value] of mappings) {
+    const node = formEl(id);
+    if (!node) continue;
+    if (!force && String(node.value || "").trim()) continue;
+    node.value = value;
+    node.dispatchEvent(new Event("input", { bubbles: true }));
+    node.dispatchEvent(new Event("change", { bubbles: true }));
   }
 }
 
@@ -388,6 +538,7 @@ async function init() {
 
   wireTermsUi();
   wireInvoiceDaysInput();
+  renderOfferVersionInfo();
 
   renderItems({
     onTotalsChanged: recalcTotalsUI,
@@ -397,7 +548,11 @@ async function init() {
   recalcAllRowsUI();
 
   wireAddItemButtons();
+  wireCopyItemsHtmlButton();
   wirePdfButton();
+  initClientSuggestions({
+    onStateChanged: () => scheduleAutosave(autosaveActiveOffer),
+  });
   initExcelExport({
     onStateChanged: () => scheduleAutosave(autosaveActiveOffer),
   });
@@ -421,6 +576,8 @@ async function init() {
 
   if (window.esusAPI) {
     const payload = await bootLastOrCreateNew(deps);
+    setActiveOffer(payload);
+    renderOfferVersionInfo(payload);
     if (el("offerNumberPreview")) el("offerNumberPreview").textContent = payload?.meta?.offerNo || "—";
 
     const offersCtl = initOffersSubpage({
@@ -434,6 +591,7 @@ async function init() {
         if (el("offerNumberPreview")) {
           el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
         }
+        renderOfferVersionInfo(p);
 
         showPage("mainPage");
 
@@ -451,6 +609,7 @@ async function init() {
         if (el("offerNumberPreview")) {
           el("offerNumberPreview").textContent = p?.meta?.offerNo || p?.offerNo || "—";
         }
+        renderOfferVersionInfo(p);
 
         const fields = p?.fields || {};
         ["custName", "custNip", "custAddr", "custContact"].forEach((id) => {
@@ -480,6 +639,52 @@ async function init() {
 
         scheduleAutosave(autosaveActiveOffer);
         showPage("mainPage");
+      },
+    });
+
+    initSettingsModal({
+      onProfileSaved: async (profile) => {
+        applyProfileToCurrentForm(profile, { force: true });
+        scheduleAutosave(autosaveActiveOffer);
+      },
+      getExchangeStatus: async () => store.exchange,
+      onRefreshExchangeRates: async () => {
+        const exchange = await fetchExchangeRates();
+        setExchange(exchange);
+        recalcAllRowsUI();
+        recalcTotalsUI();
+        return exchange;
+      },
+      onCounterReset: async () => {
+        refreshOfferPreview();
+      },
+      onClearAllData: async () => {
+        clearSavedState();
+        ["creatorName", "creatorEmail", "creatorPhone"].forEach((id) => {
+          const node = formEl(id);
+          if (!node) return;
+          node.value = "";
+        });
+
+        try {
+          const profile = await ensureUserProfile();
+          applyProfileToCurrentForm(profile, { force: true });
+          scheduleAutosave(autosaveActiveOffer);
+          showToast("Wyczyszczono dane aplikacji i ustawiono nowy profil użytkownika.", {
+            type: "info",
+            ms: 3200,
+          });
+        } catch (e) {
+          console.warn("Profile re-init after clearAllData failed:", e);
+          showToast("Wyczyszczono dane aplikacji.", { type: "info", ms: 2600 });
+        }
+      },
+      onClearAllOffers: async () => {
+        currentOfferId = null;
+        cameFromMainPage = false;
+        showPage("offersPage");
+        await offersCtl.refresh();
+        showToast("Usunięto wszystkie zapisane oferty.", { type: "info", ms: 2800 });
       },
     });
 
@@ -513,6 +718,7 @@ async function init() {
       if (el("offerNumberPreview")) {
         el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
       }
+      renderOfferVersionInfo(p);
 
       showPage("mainPage");
 

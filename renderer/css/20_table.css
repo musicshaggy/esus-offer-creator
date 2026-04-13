@@ -1,5 +1,41 @@
 /* Items */
-    .itemsHead{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px;}
+    .itemsHead{display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px;}
+    .itemsHeadTitle{display:flex; flex-direction:column; gap:4px; min-width:0;}
+    .offerVersionInfo{
+      font-size:12px;
+      color:var(--muted);
+      line-height:1.35;
+      opacity:.92;
+    }
+    .itemsHeadActions{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+    .itemsIconBtn{
+      width:38px;
+      height:38px;
+      padding:0;
+      border:none;
+      border-radius:10px;
+      background:transparent;
+      color:var(--muted);
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      box-shadow:none;
+    }
+    .itemsIconBtn:hover{
+      color:var(--text);
+      background:rgba(255,255,255,.06);
+      transform:translateY(-1px);
+    }
+    .itemsIconBtn:focus-visible{
+      outline:none;
+      color:var(--text);
+      background:rgba(255,255,255,.08);
+      box-shadow:0 0 0 3px rgba(0,154,255,.16);
+    }
+    .itemsIconBtn i{
+      font-size:15px;
+      pointer-events:none;
+    }
     .tableWrap{overflow:auto; border-radius:14px;}
     table{
       width:100%;
@@ -17,6 +53,7 @@
       vertical-align:bottom;
     }
     tbody td{padding:10px; border-bottom:1px solid rgba(255,255,255,.08); vertical-align:top;}
+    tbody td:first-child{min-width:0;}
     tbody tr:last-child td{border-bottom:none}
     .mini{font-size:12px;color:var(--muted)}
 	td.profitCell,
@@ -38,8 +75,67 @@
 	}
 
     .btnTiny{padding:8px 10px; border-radius: 12px; font-weight:700;}
-    .descInput{min-width: 420px;}
-    @media (max-width: 900px){ .descInput{min-width: 260px;} }
+    .itemDescRow{
+      position:relative;
+      min-width:0;
+      width:100%;
+    }
+    .itemDescMeta{
+      display:grid;
+      grid-template-columns:28px minmax(0, 1fr);
+      align-items:center;
+      gap:10px;
+      margin-bottom:10px;
+      min-width:0;
+    }
+    .itemDescMetaLp,
+    .itemDescMetaLabel{
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.15;
+    }
+    .itemDescMetaLp{
+      text-align:center;
+      font-weight:700;
+      letter-spacing:.01em;
+    }
+    .itemDescMetaLabel{
+      font-weight:500;
+    }
+    .itemLpBadge{
+      position:absolute;
+      top:50%;
+      left:10px;
+      transform:translateY(-50%);
+      width:28px;
+      height:28px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      border-radius:9px;
+      border:1px solid rgba(255,255,255,.1);
+      background:rgba(255,255,255,.04);
+      color:var(--muted);
+      font-size:12px;
+      font-weight:800;
+      line-height:1;
+      cursor:grab;
+      transition:background .16s ease, border-color .16s ease, color .16s ease, transform .16s ease;
+    }
+    .itemLpBadge:hover{
+      color:var(--text);
+      border-color:rgba(0,154,255,.28);
+      background:rgba(0,154,255,.08);
+    }
+    .itemLpBadge:active{
+      cursor:grabbing;
+    }
+    .itemDescRow .descInput{
+      min-width:0 !important;
+      width:100%;
+      padding-left:52px;
+    }
+    .descInput{min-width:0; width:100%;}
 
     .totals{display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:12px;}
     .totals .box{
@@ -54,6 +150,75 @@
       grid-column: 1 / -1;
       border-color: rgba(0,154,255,.45);
       background: rgba(0,154,255,.08);
+    }
+    .financeCharts{
+      display:grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, .95fr);
+      gap:12px;
+      margin-top:14px;
+    }
+    .financeChartCard{
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:14px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.015)),
+        radial-gradient(120% 140% at 0% 0%, rgba(0,154,255,.08), transparent 52%);
+      overflow:hidden;
+      min-width:0;
+    }
+    .financeChartHead{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:12px;
+    }
+    .financeChartHead h3{
+      margin:0;
+      font-size:14px;
+      font-weight:800;
+      letter-spacing:.01em;
+      color:var(--text);
+    }
+    .financeChartSub{
+      margin-top:4px;
+      font-size:12px;
+      color:var(--muted);
+      line-height:1.35;
+    }
+    .financeChartCanvas{
+      min-height:240px;
+    }
+    .financeChartCanvasGauge{
+      min-height:240px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .financeChartSvg{
+      width:100%;
+      height:auto;
+      display:block;
+    }
+    .financeChartEmpty{
+      min-height:220px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      padding:18px;
+      border-radius:14px;
+      border:1px dashed rgba(255,255,255,.1);
+      background:rgba(255,255,255,.02);
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.45;
+    }
+    @media (max-width: 980px){
+      .financeCharts{
+        grid-template-columns:1fr;
+      }
     }
 
     .note{
@@ -75,6 +240,34 @@
       background: rgba(255,255,255,.03);
     }
     .toggleRow input[type="checkbox"]{width:auto; transform:scale(1.15);}
+    .offerTermsToggles{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:10px;
+      margin-bottom:10px;
+    }
+    .offerTermsToggle{
+      align-items:center;
+      min-width:0;
+      padding:10px 12px;
+    }
+    .offerTermsSwitch{
+      flex:0 0 auto;
+    }
+    .offerTermsToggle > div{
+      min-width:0;
+      flex:1 1 auto;
+    }
+    .offerTermsToggleTitle{
+      font-weight:700;
+      font-size:12px;
+      line-height:1.3;
+    }
+    .offerTermsToggle .mini{
+      margin-top:4px;
+      font-size:11px;
+      line-height:1.35;
+    }
 	/* Fix: dropdown list in dark UI (Chrome/Edge/Win) */
 	select {
 	  color: var(--text);
@@ -102,6 +295,15 @@
 	  display:flex;
 	  align-items:center;
 	  gap:8px;
+	}
+	.sectionHeaderActions{
+	  display:flex;
+	  align-items:center;
+	  gap:8px;
+	  flex-wrap:wrap;
+	}
+	#btnConvertToIaiOrder{
+	  min-width:220px;
 	}
 
 	button:disabled{
@@ -154,6 +356,24 @@ td.profitCell{
 
 td.profitCell .profitWrap{
   justify-content: center !important;
+}
+
+#itemsBody tr.is-dragging{
+  opacity:.72;
+}
+
+#itemsBody tr.drop-before td{
+  border-top:2px solid rgba(0,154,255,.72);
+}
+
+#itemsBody tr.drop-after td{
+  border-bottom:2px solid rgba(0,154,255,.72);
+}
+
+@media (max-width: 980px){
+  .offerTermsToggles{
+    grid-template-columns:1fr;
+  }
 }
 
 
