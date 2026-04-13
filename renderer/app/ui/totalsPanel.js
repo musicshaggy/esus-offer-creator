@@ -123,6 +123,7 @@ function renderMarginGauge(marginPct) {
   const safeMargin = Number.isFinite(marginPct) ? marginPct : 0;
   const normalized = (clamp(safeMargin, min, max) - min) / (max - min);
   const angle = 180 + normalized * 180;
+  const marginText = `${safeMargin.toLocaleString("pl-PL", { maximumFractionDigits: 2 })}%`;
   const cx = 160;
   const cy = 150;
   const r = 108;
@@ -149,9 +150,8 @@ function renderMarginGauge(marginPct) {
       <line x1="${cx}" y1="${cy}" x2="${pointer.x}" y2="${pointer.y}" stroke="${valueColor}" stroke-width="4" stroke-linecap="round" />
       <circle cx="${cx}" cy="${cy}" r="8" fill="${valueColor}" />
       <text x="${cx}" y="${cy - 18}" text-anchor="middle" fill="rgba(168,179,214,.85)" font-size="11">Aktualna marża</text>
-      <text x="${cx}" y="${cy + 12}" text-anchor="middle" fill="#E9EEFC" font-size="28" font-weight="800">${escapeHtml(safeMargin.toLocaleString("pl-PL", { maximumFractionDigits: 2 }))}%</text>
       <text x="36" y="178" fill="rgba(168,179,214,.75)" font-size="10">-20%</text>
-      <text x="${cx}" y="196" text-anchor="middle" fill="rgba(168,179,214,.75)" font-size="10">20%</text>
+      <text x="${cx}" y="196" text-anchor="middle" fill="rgba(233,238,252,.82)" font-size="15" font-weight="700">${escapeHtml(marginText)}</text>
       <text x="282" y="178" text-anchor="end" fill="rgba(168,179,214,.75)" font-size="10">60%</text>
       <text x="${cx}" y="214" text-anchor="middle" fill="${valueColor}" font-size="11" font-weight="700">${safeMargin < 10 ? "niska" : safeMargin < 25 ? "umiarkowana" : "mocna"} marża</text>
     </svg>

@@ -57,6 +57,17 @@ export function updateItem(idx, patch) {
   store.items[idx] = { ...it, ...(patch || {}) };
 }
 
+export function moveItem(fromIdx, toIdx) {
+  if (!Number.isFinite(fromIdx) || !Number.isFinite(toIdx)) return;
+  if (fromIdx === toIdx) return;
+  if (fromIdx < 0 || toIdx < 0) return;
+  if (fromIdx >= store.items.length || toIdx >= store.items.length) return;
+
+  const [moved] = store.items.splice(fromIdx, 1);
+  if (!moved) return;
+  store.items.splice(toIdx, 0, moved);
+}
+
 // ✅ settery do kursów
 export function setExchange(next) {
   if (!next || typeof next !== "object") return;

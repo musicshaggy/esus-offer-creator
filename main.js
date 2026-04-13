@@ -1,5 +1,5 @@
 // main.js
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, safeStorage } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -105,11 +105,89 @@ function defaultUserSettings() {
     docDefaults: { offerCcy: "PLN", lang: "pl", vatCode: "23" },
     integrations: {
       idosell: {
+        enabled: true,
         baseUrl: "",
-        apiKey: "",
       },
     },
   };
+}
+
+function idosellApiKeyPath() {
+  return path.join(app.getPath("userData"), "idosell-api-key.dat");
+}
+
+function persistEncryptedIdoSellApiKey(apiKey) {
+  const secret = String(apiKey || "").trim();
+  const secretPath = idosellApiKeyPath();
+
+  if (!secret) {
+    deleteFileIfExists(secretPath);
+    return false;
+  }
+
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("Szyfrowanie systemowe nie jest dostępne na tym urządzeniu.");
+  }
+
+  fs.mkdirSync(path.dirname(secretPath), { recursive: true });
+  const payload = {
+    scheme: "electron-safe-storage",
+    value: safeStorage.encryptString(secret).toString("base64"),
+  };
+  fs.writeFileSync(secretPath, JSON.stringify(payload, null, 2), "utf-8");
+  return true;
+}
+
+function readEncryptedIdoSellApiKey() {
+  const secretPath = idosellApiKeyPath();
+  if (!fs.existsSync(secretPath)) return "";
+
+  try {
+    const raw = JSON.parse(fs.readFileSync(secretPath, "utf-8"));
+    const value = String(raw?.value || "").trim();
+    if (!value) return "";
+    if (!safeStorage.isEncryptionAvailable()) return "";
+    return safeStorage.decryptString(Buffer.from(value, "base64")).trim();
+  } catch {
+    return "";
+  }
+}
+
+function migratePlaintextIdoSellApiKey(settings) {
+  const plaintext = String(settings?.integrations?.idosell?.apiKey || "").trim();
+  if (!plaintext) return settings;
+
+  persistEncryptedIdoSellApiKey(plaintext);
+
+  const next = {
+    ...(settings || {}),
+    integrations: {
+      ...(settings?.integrations || {}),
+      idosell: {
+        ...(settings?.integrations?.idosell || {}),
+      },
+    },
+  };
+  delete next.integrations.idosell.apiKey;
+  writeJsonSafe(getSettingsPath(), next);
+  return next;
+}
+
+function sanitizeSettingsForRenderer(settings) {
+  const next = mergeUserSettings(settings, {});
+  const hasApiKey = !!readEncryptedIdoSellApiKey();
+
+  next.integrations = {
+    ...(next.integrations || {}),
+    idosell: {
+      ...(next.integrations?.idosell || {}),
+      apiKey: "",
+      enabled: next.integrations?.idosell?.enabled !== false,
+      hasApiKey,
+    },
+  };
+
+  return next;
 }
 
 function readJsonSafe(p, fallback) {
@@ -163,6 +241,24 @@ function normalizeExternalBaseUrl(input) {
   const withProtocol = /^[a-z]+:\/\//i.test(raw) ? raw : `https://${raw}`;
   const url = new URL(withProtocol);
   return url.origin;
+}
+
+function validateIdoSellBaseUrl(input) {
+  const normalized = normalizeExternalBaseUrl(input);
+  if (!normalized) return { ok: false, message: "Podaj Base URL do panelu IdoSell." };
+
+  let url;
+  try {
+    url = new URL(normalized);
+  } catch {
+    return { ok: false, message: "Base URL IdoSell jest nieprawidłowy." };
+  }
+
+  if (url.protocol !== "https:") {
+    return { ok: false, message: "Połączenie z IdoSell musi używać HTTPS." };
+  }
+
+  return { ok: true, normalizedBaseUrl: url.origin };
 }
 
 async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 10000) {
@@ -280,12 +376,13 @@ function pickIdoSellTestOperations(spec, baseUrl) {
 }
 
 async function testIdoSellConnection({ baseUrl, apiKey }) {
-  const normalizedBaseUrl = normalizeExternalBaseUrl(baseUrl);
-  const key = String(apiKey || "").trim();
-
-  if (!normalizedBaseUrl) {
-    return { ok: false, message: "Podaj Base URL do panelu IdoSell." };
+  const baseUrlCheck = validateIdoSellBaseUrl(baseUrl);
+  if (!baseUrlCheck.ok) {
+    return { ok: false, message: baseUrlCheck.message };
   }
+
+  const normalizedBaseUrl = baseUrlCheck.normalizedBaseUrl;
+  const key = String(apiKey || "").trim() || readEncryptedIdoSellApiKey();
 
   if (!key) {
     return { ok: false, message: "Podaj klucz Admin API." };
@@ -433,11 +530,15 @@ function buildIdoSellAdminUrl(baseUrl, endpoint) {
 }
 
 function getIdoSellIntegrationSettings() {
-  const settings = mergeUserSettings(readJsonSafe(getSettingsPath(), defaultUserSettings()), {});
+  const settings = migratePlaintextIdoSellApiKey(
+    mergeUserSettings(readJsonSafe(getSettingsPath(), defaultUserSettings()), {})
+  );
   const idosell = settings?.integrations?.idosell || {};
+  const baseUrlCheck = validateIdoSellBaseUrl(idosell?.baseUrl || "");
   return {
-    baseUrl: normalizeExternalBaseUrl(idosell?.baseUrl || ""),
-    apiKey: String(idosell?.apiKey || "").trim(),
+    enabled: idosell?.enabled !== false,
+    baseUrl: baseUrlCheck.ok ? baseUrlCheck.normalizedBaseUrl : "",
+    apiKey: readEncryptedIdoSellApiKey(),
   };
 }
 
@@ -991,11 +1092,15 @@ async function fetchClientFromIdoSellByNip(nip) {
   }
 
   const idosell = getIdoSellIntegrationSettings();
-  if (!idosell.baseUrl || !idosell.apiKey) {
+  if (!idosell.enabled) {
+    note("Integracja IdoSell jest wyłączona.");
+  }
+
+  if (idosell.enabled && (!idosell.baseUrl || !idosell.apiKey)) {
     note("Brak skonfigurowanego Base URL albo klucza API IdoSell.");
   }
 
-  if (idosell.baseUrl && idosell.apiKey) {
+  if (idosell.enabled && idosell.baseUrl && idosell.apiKey) {
     note(`Start lookupu IdoSell dla NIP ${normalizedNip}.`);
 
   const clientsGetUrl = buildIdoSellAdminUrl(idosell.baseUrl, "clients/clients");
@@ -1312,16 +1417,107 @@ function offersIndexPath() {
   return path.join(offersDir(), "offers-index.json");
 }
 
+function sanitizeOfferIds(ids) {
+  if (!Array.isArray(ids)) return [];
+  return ids.filter((id) => {
+    try {
+      ensureSafeOfferId(id);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
 function readOffersIndex() {
-  return readJsonSafe(offersIndexPath(), { ids: [] });
+  const index = readJsonSafe(offersIndexPath(), { ids: [] });
+  return { ids: sanitizeOfferIds(index?.ids) };
 }
 
 function writeOffersIndex(index) {
-  writeJsonSafe(offersIndexPath(), index);
+  writeJsonSafe(offersIndexPath(), { ids: sanitizeOfferIds(index?.ids) });
 }
 
 function offerFilePath(id) {
   return path.join(offersDir(), `${id}.json`);
+}
+
+function isPlainObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function ensureSafeOfferId(id) {
+  const value = String(id || "").trim();
+  if (!value) throw new Error("Brak identyfikatora oferty.");
+  if (!/^[A-Za-z0-9-]+$/.test(value)) {
+    throw new Error("Nieprawidłowy identyfikator oferty.");
+  }
+  return value;
+}
+
+function resolveOfferFilePath(id) {
+  const safeId = ensureSafeOfferId(id);
+  const baseDir = offersDir();
+  const resolved = path.resolve(baseDir, `${safeId}.json`);
+  const relative = path.relative(baseDir, resolved);
+
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error("Ścieżka oferty wykracza poza katalog danych.");
+  }
+
+  return resolved;
+}
+
+function sanitizeSettingsPatch(patch) {
+  if (!isPlainObject(patch)) throw new Error("Nieprawidłowe ustawienia.");
+
+  const next = {};
+
+  if (Object.prototype.hasOwnProperty.call(patch, "initials")) {
+    next.initials = String(patch.initials || "").trim().toUpperCase();
+  }
+
+  if (isPlainObject(patch.offerSeq)) {
+    next.offerSeq = { ...patch.offerSeq };
+  }
+
+  if (isPlainObject(patch.profile)) {
+    next.profile = {
+      fullName: String(patch.profile.fullName || "").trim(),
+      email: String(patch.profile.email || "").trim(),
+      phone: String(patch.profile.phone || "").trim(),
+      initials: String(patch.profile.initials || "").trim().toUpperCase(),
+    };
+  }
+
+  if (isPlainObject(patch.docDefaults)) {
+    next.docDefaults = {
+      offerCcy: String(patch.docDefaults.offerCcy || "").trim().toUpperCase(),
+      lang: String(patch.docDefaults.lang || "").trim().toLowerCase(),
+      vatCode: String(patch.docDefaults.vatCode || "").trim(),
+    };
+  }
+
+  if (isPlainObject(patch.integrations)) {
+    next.integrations = {};
+    if (isPlainObject(patch.integrations.idosell)) {
+      const rawBaseUrl = String(patch.integrations.idosell.baseUrl || "").trim();
+      const validatedBaseUrl = rawBaseUrl ? validateIdoSellBaseUrl(rawBaseUrl) : { ok: true, normalizedBaseUrl: "" };
+      if (!validatedBaseUrl.ok) {
+        throw new Error(validatedBaseUrl.message);
+      }
+
+      next.integrations.idosell = {
+        enabled: patch.integrations.idosell.enabled !== false,
+        baseUrl: validatedBaseUrl.normalizedBaseUrl || "",
+      };
+      if (Object.prototype.hasOwnProperty.call(patch.integrations.idosell, "apiKey")) {
+        next.integrations.idosell.apiKey = String(patch.integrations.idosell.apiKey || "").trim();
+      }
+    }
+  }
+
+  return next;
 }
 
 function makeId() {
@@ -1410,18 +1606,47 @@ app.on("window-all-closed", () => {
 // ===== IPC: user settings =====
 ipcMain.handle("settings:get", async () => {
   const p = getSettingsPath();
-  return mergeUserSettings(readJsonSafe(p, defaultUserSettings()), {});
+  const settings = migratePlaintextIdoSellApiKey(
+    mergeUserSettings(readJsonSafe(p, defaultUserSettings()), {})
+  );
+  return sanitizeSettingsForRenderer(settings);
 });
 
 ipcMain.handle("settings:set", async (_evt, patch) => {
   const p = getSettingsPath();
-  const current = readJsonSafe(p, defaultUserSettings());
+  const current = migratePlaintextIdoSellApiKey(
+    mergeUserSettings(readJsonSafe(p, defaultUserSettings()), {})
+  );
+  const safePatch = sanitizeSettingsPatch(patch || {});
 
-  const next = mergeUserSettings(current, patch);
+  const nextPatch = {
+    ...safePatch,
+    integrations: safePatch?.integrations
+      ? {
+          ...(safePatch.integrations || {}),
+          idosell: safePatch?.integrations?.idosell
+            ? { ...(safePatch.integrations.idosell || {}) }
+            : safePatch.integrations?.idosell,
+        }
+      : safePatch?.integrations,
+  };
     // ✅ merge docDefaults (jeśli renderer zacznie to zapisywać)
 
+  if (safePatch?.integrations?.idosell && Object.prototype.hasOwnProperty.call(safePatch.integrations.idosell, "apiKey")) {
+    const incomingApiKey = String(safePatch.integrations.idosell.apiKey || "").trim();
+    if (incomingApiKey) {
+      persistEncryptedIdoSellApiKey(incomingApiKey);
+    }
+    delete nextPatch.integrations.idosell.apiKey;
+  }
+
+  const next = mergeUserSettings(current, nextPatch);
+  if (next?.integrations?.idosell && Object.prototype.hasOwnProperty.call(next.integrations.idosell, "apiKey")) {
+    delete next.integrations.idosell.apiKey;
+  }
+
   writeJsonSafe(p, next);
-  return next;
+  return sanitizeSettingsForRenderer(next);
 });
 
 ipcMain.handle("settings:resetCounter", async () => {
@@ -1440,20 +1665,22 @@ ipcMain.handle("settings:resetCounter", async () => {
 ipcMain.handle("settings:clearAllData", async () => {
   deleteFileIfExists(getSettingsPath());
   deleteFileIfExists(clientsPath());
-  return defaultUserSettings();
+  deleteFileIfExists(idosellApiKeyPath());
+  return sanitizeSettingsForRenderer(defaultUserSettings());
 });
 
 ipcMain.handle("settings:testIdoSellConnection", async (_evt, payload) => {
+  if (!isPlainObject(payload || {})) throw new Error("Nieprawidłowe dane testu połączenia.");
   return await testIdoSellConnection(payload || {});
 });
 
 // ===== IPC: clients =====
 ipcMain.handle("clients:suggest", async (_evt, query) => {
-  return searchClients(query);
+  return searchClients(String(query || ""));
 });
 
 ipcMain.handle("clients:getByNip", async (_evt, nip) => {
-  const normalized = normalizeNip(nip);
+  const normalized = normalizeNip(String(nip || ""));
   if (!normalized) return null;
 
   const db = readClientsDb();
@@ -1465,7 +1692,7 @@ ipcMain.handle("clients:getByNip", async (_evt, nip) => {
 });
 
 ipcMain.handle("clients:lookupByNip", async (_evt, nip) => {
-  const normalized = normalizeNip(nip);
+  const normalized = normalizeNip(String(nip || ""));
   if (!normalized) return { client: null, diagnostics: ["Brak NIP do wyszukania."] };
 
   const db = readClientsDb();
@@ -1493,7 +1720,7 @@ ipcMain.handle("clients:lookupByNip", async (_evt, nip) => {
 });
 
 ipcMain.handle("clients:deleteByNip", async (_evt, nip) => {
-  return deleteClientByNip(nip);
+  return deleteClientByNip(String(nip || ""));
 });
 
 // ===== IPC: offers CRUD =====
@@ -1501,7 +1728,12 @@ ipcMain.handle("offers:list", async () => {
   const idx = readOffersIndex();
   const list = [];
   for (const id of idx.ids || []) {
-    const p = offerFilePath(id);
+    let p = null;
+    try {
+      p = resolveOfferFilePath(id);
+    } catch {
+      continue;
+    }
     if (!fs.existsSync(p)) continue;
     const payload = readJsonSafe(p, null);
     if (!payload) continue;
@@ -1518,11 +1750,11 @@ ipcMain.handle("offers:list", async () => {
 
 ipcMain.handle("offers:getLast", async () => {
   const idx = readOffersIndex();
-  return idx.ids && idx.ids[0] ? idx.ids[0] : null;
+  return Array.isArray(idx.ids) && idx.ids[0] ? idx.ids[0] : null;
 });
 
 ipcMain.handle("offers:open", async (_evt, id) => {
-  const p = offerFilePath(id);
+  const p = resolveOfferFilePath(id);
   if (!fs.existsSync(p)) throw new Error("Oferta nie istnieje");
   const payload = readJsonSafe(p, null);
 
@@ -1581,7 +1813,7 @@ async function createFreshOfferPayload() {
     totals: null,
   };
 
-  writeJsonSafe(offerFilePath(id), payload);
+  writeJsonSafe(resolveOfferFilePath(id), payload);
 
   const idx = readOffersIndex();
   const ids = Array.isArray(idx.ids) ? idx.ids : [];
@@ -1596,10 +1828,10 @@ ipcMain.handle("offers:new", async () => {
 });
 
 ipcMain.handle("offers:save", async (_evt, payload) => {
-  if (!payload || typeof payload !== "object") throw new Error("Nieprawidłowy payload");
+  if (!isPlainObject(payload)) throw new Error("Nieprawidłowy payload.");
 
-  const id = payload.id || makeId();
-  const filePath = offerFilePath(id);
+  const id = payload.id ? ensureSafeOfferId(payload.id) : makeId();
+  const filePath = resolveOfferFilePath(id);
 
   // ✅ merge z istniejącą ofertą, żeby nie zgubić meta ustawień (waluta/język/VAT)
   const existing = fs.existsSync(filePath) ? readJsonSafe(filePath, null) : null;
@@ -1637,10 +1869,11 @@ ipcMain.handle("offers:save", async (_evt, payload) => {
 });
 
 ipcMain.handle("offers:delete", async (_evt, id) => {
-  const p = offerFilePath(id);
+  const safeId = ensureSafeOfferId(id);
+  const p = resolveOfferFilePath(safeId);
   if (fs.existsSync(p)) fs.unlinkSync(p);
   const idx = readOffersIndex();
-  const ids = (idx.ids || []).filter((x) => x !== id);
+  const ids = (idx.ids || []).filter((x) => x !== safeId);
   writeOffersIndex({ ids });
   return { ok: true };
 });
@@ -1650,7 +1883,7 @@ ipcMain.handle("offers:deleteAll", async () => {
 });
 
 ipcMain.handle("offers:duplicate", async (_evt, id) => {
-  const srcPath = offerFilePath(id);
+  const srcPath = resolveOfferFilePath(id);
   if (!fs.existsSync(srcPath)) throw new Error("Oferta nie istnieje");
 
   const src = readJsonSafe(srcPath, null);
@@ -1686,7 +1919,7 @@ ipcMain.handle("offers:duplicate", async (_evt, id) => {
     totals: src.totals || null,
   };
 
-  writeJsonSafe(offerFilePath(payload.id), payload);
+  writeJsonSafe(resolveOfferFilePath(payload.id), payload);
 
   const idx = readOffersIndex();
   const ids = Array.isArray(idx.ids) ? idx.ids : [];

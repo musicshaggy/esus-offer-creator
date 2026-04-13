@@ -55,10 +55,12 @@ function applyClientToForm(client) {
 
 function renderSuggestions(clients) {
   const listEl = el("clientsNipSuggestions");
+  const currentNip = normalizeNip(el("custNip")?.value);
   if (!listEl) return;
 
   listEl.innerHTML = "";
   for (const client of clients || []) {
+    if (normalizeNip(client?.nip) === currentNip) continue;
     const option = document.createElement("option");
     option.value = client.nip || "";
     option.label = [client.name, client.addr].filter(Boolean).join(" - ");
@@ -66,14 +68,29 @@ function renderSuggestions(clients) {
   }
 }
 
+function clearSuggestions() {
+  renderSuggestions([]);
+}
+
 export function initClientSuggestions({ onStateChanged } = {}) {
   const nipEl = el("custNip");
   const deleteBtn = el("btnDeleteClientCache");
+  const lookupBtn = el("btnLookupClientByNip");
   if (!nipEl || !window.esusAPI?.clientsSuggest || !window.esusAPI?.clientGetByNip) return;
 
   let lastAppliedNip = "";
   let lastAutofilled = null;
   let lookupToken = 0;
+  let suppressNipEvents = false;
+
+  function applyClientState(client) {
+    suppressNipEvents = true;
+    try {
+      applyClientToForm(client);
+    } finally {
+      suppressNipEvents = false;
+    }
+  }
 
   const refreshSuggestions = debounce(async () => {
     const raw = String(nipEl.value || "").trim();
@@ -105,6 +122,26 @@ export function initClientSuggestions({ onStateChanged } = {}) {
     lastAppliedNip = "";
   }
 
+  async function tryApplyLocalClient() {
+    const normalized = normalizeNip(nipEl.value);
+    if (!normalized || normalized.length !== 10) return false;
+
+    const client = await window.esusAPI?.clientGetByNip?.(normalized);
+    if (!client) return false;
+
+    applyClientState(client);
+    lastAppliedNip = client.nip || normalized;
+    lastAutofilled = {
+      nip: client.nip || "",
+      name: client.name || "",
+      addr: client.addr || "",
+      contact: client.contact || "",
+    };
+    clearSuggestions();
+    onStateChanged?.();
+    return true;
+  }
+
   async function tryApplyKnownClient({ notify = false } = {}) {
     const normalized = normalizeNip(nipEl.value);
     if (!normalized || normalized.length !== 10) {
@@ -128,13 +165,20 @@ export function initClientSuggestions({ onStateChanged } = {}) {
       if (!client) {
         lastAppliedNip = "";
         if (notify) {
-          showToast("Nie znaleziono klienta w bazie danych.", { type: "error", ms: 3200 });
+          showToast("Nie znaleziono klienta w bazie danych.", { type: "info", ms: 3200 });
         }
         return;
       }
 
+      const sourceLabel =
+        client?.source === "idosell"
+          ? " z IdoSell"
+          : client?.source === "mf"
+            ? " z bazy MF"
+            : "";
+
       if (lastAppliedNip !== client.nip) {
-        applyClientToForm(client);
+        applyClientState(client);
         lastAppliedNip = client.nip;
         lastAutofilled = {
           nip: client.nip || "",
@@ -142,19 +186,15 @@ export function initClientSuggestions({ onStateChanged } = {}) {
           addr: client.addr || "",
           contact: client.contact || "",
         };
+        clearSuggestions();
         onStateChanged?.();
-        if (notify) {
-          const sourceLabel =
-            client?.source === "idosell"
-              ? " z IdoSell"
-              : client?.source === "mf"
-                ? " z bazy MF"
-                : "";
-          showToast(`Uzupelniono dane klienta${sourceLabel}: ${client.name || client.nip}.`, {
-            type: "info",
-            ms: 2200,
-          });
-        }
+      }
+
+      if (notify) {
+        showToast(`Uzupelniono dane klienta${sourceLabel}: ${client.name || client.nip}.`, {
+          type: "info",
+          ms: 2200,
+        });
       }
     } finally {
       if (currentToken === lookupToken) setLookupLoading(false);
@@ -162,17 +202,31 @@ export function initClientSuggestions({ onStateChanged } = {}) {
   }
 
   nipEl.addEventListener("focus", refreshSuggestions);
-  nipEl.addEventListener("input", async () => {
+  nipEl.addEventListener("input", () => {
+    if (suppressNipEvents) return;
+    const normalized = normalizeNip(nipEl.value);
     maybeClearPreviousAutofill(nipEl.value);
+
+    if (normalized && normalized === lastAppliedNip) {
+      clearSuggestions();
+      return;
+    }
+
     lastAppliedNip = "";
     refreshSuggestions();
-    await tryApplyKnownClient();
   });
   nipEl.addEventListener("change", async () => {
+    if (suppressNipEvents) return;
     maybeClearPreviousAutofill(nipEl.value);
+    await tryApplyLocalClient();
+  });
+  nipEl.addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
     await tryApplyKnownClient({ notify: true });
   });
-  nipEl.addEventListener("blur", async () => {
+
+  lookupBtn?.addEventListener("click", async () => {
     await tryApplyKnownClient({ notify: true });
   });
 
@@ -189,11 +243,11 @@ export function initClientSuggestions({ onStateChanged } = {}) {
     try {
       const result = await window.esusAPI?.clientDeleteByNip?.(normalized);
       if (result?.deleted) {
-        if (lastAutofilled?.nip === normalized) {
-          clearClientFields();
-          lastAutofilled = null;
-          lastAppliedNip = "";
-        }
+        clearClientFields();
+        lastAutofilled = null;
+        lastAppliedNip = "";
+        nipEl.value = "";
+        clearSuggestions();
         renderSuggestions(await window.esusAPI.clientsSuggest(normalized));
         showToast("Usunięto klienta z lokalnej bazy.", { type: "info", ms: 2400 });
         onStateChanged?.();

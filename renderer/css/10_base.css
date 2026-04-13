@@ -105,7 +105,7 @@
     }
     .clientNipRow{
       display:grid;
-      grid-template-columns:minmax(0,1fr) auto;
+      grid-template-columns:minmax(0,1fr) auto auto;
       gap:4px;
       align-items:center;
     }
@@ -153,14 +153,24 @@
       opacity:.75;
     }
     .clientNipDeleteBtn{
-      width:20px;
-      height:20px;
-      border-radius:12px;
-      background:transparent;
-      border:0;
-      flex:0 0 20px;
-      padding:0;
-    }
+        width:20px;
+        height:20px;
+        border-radius:12px;
+        background:transparent;
+        border:0;
+        flex:0 0 20px;
+        padding:0;
+      }
+    .clientNipLookupBtn{
+        width:20px;
+        height:20px;
+        border-radius:12px;
+        background:transparent;
+        border:0;
+        flex:0 0 20px;
+        padding:0;
+        margin-left:1px;
+      }
     .clientNipIconBtn:hover{
       color:var(--text);
       opacity:1;

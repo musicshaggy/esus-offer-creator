@@ -1,5 +1,5 @@
 import { el, escapeHtml, toNumber, money } from "../utils/format.js";
-import { store, removeItem, updateItem } from "../state/store.js";
+import { store, removeItem, updateItem, moveItem } from "../state/store.js";
 import { itemNetAfterDiscount, calcRowProfitAndMargin } from "../calc/pricing.js";
 import { getRateToPLN } from "../utils/exchangeRates.js";
 
@@ -12,6 +12,7 @@ let _discTipEl = null;
 let _discTipActive = null;
 let _noteTipEl = null;
 let _noteTipActive = null;
+let _dragItemIndex = null;
 
 function ensureDiscountTip() {
   if (_discTipEl) return _discTipEl;
@@ -481,6 +482,12 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
 
   tbody.innerHTML = "";
 
+  const clearDragClasses = () => {
+    tbody.querySelectorAll(".is-dragging, .drop-before, .drop-after").forEach((node) => {
+      node.classList.remove("is-dragging", "drop-before", "drop-after");
+    });
+  };
+
   store.items.forEach((it, idx) => {
     // backward compatible warranty object
     if (!it.warranty || typeof it.warranty !== "object") {
@@ -508,12 +515,17 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>
-        <label class="mini"><strong>${idx + 1}</strong> | Opis pozycji:</label>
-
-        <input class="descInput"
-          data-k="desc" data-i="${idx}"
-          placeholder="Np. Dell PowerEdge / RAM / SSD..."
-          value="${escapeHtml(it.desc)}" />
+        <div class="itemDescMeta" aria-hidden="true">
+          <span class="itemDescMetaLp">Lp.</span>
+          <span class="itemDescMetaLabel">Opis pozycji</span>
+        </div>
+        <div class="itemDescRow">
+          <div class="itemLpBadge" data-drag-handle="${idx}" draggable="true" title="Przeciągnij, aby zmienić kolejność" aria-label="Pozycja ${idx + 1}. Przeciągnij, aby zmienić kolejność">${idx + 1}</div>
+          <input class="descInput"
+            data-k="desc" data-i="${idx}"
+            placeholder="Opis pozycji..."
+            value="${escapeHtml(it.desc)}" />
+        </div>
 
         <div class="itemRowMetaActions">
           <span
@@ -635,6 +647,75 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
     `;
 
     tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll("tr").forEach((tr, idx) => {
+    tr.dataset.itemIndex = String(idx);
+
+    tr.addEventListener("dragover", (event) => {
+      if (_dragItemIndex === null) return;
+      event.preventDefault();
+
+      const rect = tr.getBoundingClientRect();
+      const before = event.clientY < rect.top + rect.height / 2;
+
+      tr.classList.toggle("drop-before", before);
+      tr.classList.toggle("drop-after", !before);
+    });
+
+    tr.addEventListener("dragleave", () => {
+      tr.classList.remove("drop-before", "drop-after");
+    });
+
+    tr.addEventListener("drop", (event) => {
+      if (_dragItemIndex === null) return;
+      event.preventDefault();
+
+      const targetIndex = parseInt(tr.dataset.itemIndex || "-1", 10);
+      if (!Number.isFinite(targetIndex) || targetIndex < 0) {
+        clearDragClasses();
+        _dragItemIndex = null;
+        return;
+      }
+
+      const rect = tr.getBoundingClientRect();
+      const before = event.clientY < rect.top + rect.height / 2;
+      let nextIndex = before ? targetIndex : targetIndex + 1;
+
+      if (_dragItemIndex < nextIndex) nextIndex -= 1;
+      nextIndex = Math.max(0, Math.min(store.items.length - 1, nextIndex));
+
+      if (_dragItemIndex !== nextIndex) {
+        moveItem(_dragItemIndex, nextIndex);
+        renderItems({ onTotalsChanged, onStateChanged });
+        onTotalsChanged?.();
+        onStateChanged?.();
+      }
+
+      clearDragClasses();
+      _dragItemIndex = null;
+    });
+  });
+
+  tbody.querySelectorAll("[data-drag-handle]").forEach((handle) => {
+    const row = handle.closest("tr");
+
+    handle.addEventListener("dragstart", (event) => {
+      _dragItemIndex = parseInt(handle.getAttribute("data-drag-handle") || "-1", 10);
+      if (!Number.isFinite(_dragItemIndex) || _dragItemIndex < 0) {
+        _dragItemIndex = null;
+        return;
+      }
+
+      row?.classList.add("is-dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", String(_dragItemIndex));
+    });
+
+    handle.addEventListener("dragend", () => {
+      clearDragClasses();
+      _dragItemIndex = null;
+    });
   });
 
   // ✅ po renderze: odśwież hinty (raz)

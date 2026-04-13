@@ -1,4 +1,4 @@
-import { money, ymdToPL, escapeHtml, toNumber } from "../utils/format.js";
+import { money, ymdToPL, toNumber } from "../utils/format.js";
 import { VAT_RATE } from "../config/constants.js";
 import { itemNetAfterDiscount } from "../calc/pricing.js";
 import { showToast, showToastAction } from "../ui/toast.js";
@@ -194,10 +194,10 @@ function renderRows(rows, { onOpen, onDuplicate, onDelete }) {
       row?.id || row?.key || row?.offerId || row?.offerUID || row?.offerUuid ||
       row?.meta?.id || row?.meta?.offerId || null;
 
-    const offerNo = escapeHtml(pickOfferNo(row));
-    const client = escapeHtml(pickClient(row));
-    const updated = escapeHtml(pickUpdated(row));
-    const gross = escapeHtml(pickGross(row));
+    const offerNo = String(pickOfferNo(row) || "—");
+    const client = String(pickClient(row) || "—");
+    const updated = String(pickUpdated(row) || "—");
+    const gross = String(pickGross(row) || "—");
 
     const tr = document.createElement("tr");
     tr.innerHTML = `

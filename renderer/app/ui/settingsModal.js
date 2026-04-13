@@ -44,6 +44,23 @@ function normalizeBaseUrl(v) {
   }
 }
 
+function validateIdoSellBaseUrl(v) {
+  const normalized = normalizeBaseUrl(v);
+  if (!normalized) return { ok: false, message: "Podaj Base URL do panelu IdoSell." };
+
+  try {
+    const url = new URL(normalized);
+
+    if (url.protocol !== "https:") {
+      return { ok: false, message: "Base URL IdoSell musi używać HTTPS." };
+    }
+
+    return { ok: true, normalizedBaseUrl: url.origin };
+  } catch {
+    return { ok: false, message: "Base URL IdoSell jest nieprawidłowy." };
+  }
+}
+
 function show() {
   const node = el("settingsModalBackdrop");
   if (node) node.style.display = "block";
@@ -85,24 +102,58 @@ function setIdoSellStatus(text, type = "neutral") {
   node.textContent = text || "Brak testu połączenia.";
 }
 
+function setIdoSellSectionEnabled(enabled) {
+  const section = el("settingsIdoSellSection");
+  const nodes = [
+    el("settingsIdoSellBaseUrl"),
+    el("settingsIdoSellApiKey"),
+    el("btnSettingsTestIdoSell"),
+  ];
+
+  section?.classList.toggle("is-disabled", !enabled);
+  nodes.forEach((node) => {
+    if (!node) return;
+    node.disabled = !enabled;
+  });
+}
+
+function updateIdoSellSaveButtonEnabled(enabled, testPassed) {
+  const saveBtn = el("btnSettingsSaveIdoSell");
+  if (!saveBtn) return;
+  saveBtn.disabled = !enabled || !testPassed;
+}
+
+function configureIdoSellApiKeyField(input, hasApiKey) {
+  if (!input) return;
+  input.value = "";
+  input.dataset.hasStoredSecret = hasApiKey ? "1" : "0";
+  input.placeholder = hasApiKey
+    ? "Klucz zapisany bezpiecznie. Wpisz nowy tylko jeśli chcesz go zmienić."
+    : "Wklej klucz Admin API";
+}
+
 async function fillForm() {
   const settings = await getUserSettings();
   const profile = settings?.profile || {};
   const initialsEl = el("settingsProfileInitials");
   const idosell = settings?.integrations?.idosell || {};
+  const idosellEnabled = idosell?.enabled !== false;
 
   el("settingsProfileFullName").value = profile?.fullName || "";
   el("settingsProfileEmail").value = profile?.email || "";
   el("settingsProfilePhone").value = profile?.phone || "";
+  el("settingsIdoSellEnabled").checked = idosellEnabled;
   el("settingsIdoSellBaseUrl").value = idosell?.baseUrl || "";
-  el("settingsIdoSellApiKey").value = idosell?.apiKey || "";
+  configureIdoSellApiKeyField(el("settingsIdoSellApiKey"), !!idosell?.hasApiKey);
+  setIdoSellSectionEnabled(idosellEnabled);
 
   if (initialsEl) {
     initialsEl.value = normalizeInitials(profile?.initials) || deriveInitials(profile?.fullName || "");
     initialsEl.dataset.touched = "0";
   }
 
-  setIdoSellStatus("Brak testu połączenia.");
+  updateIdoSellSaveButtonEnabled(idosellEnabled, false);
+  setIdoSellStatus(idosellEnabled ? "Wykonaj pozytywny test połączenia, aby zapisać integrację." : "Integracja IdoSell jest wyłączona.");
 }
 
 function buildExchangeLabel(exchange) {
@@ -121,6 +172,14 @@ export function initSettingsModal({
 } = {}) {
   const backdrop = el("settingsModalBackdrop");
   if (!backdrop) return;
+  let idosellTestPassed = false;
+
+  function resetIdoSellTestState() {
+    idosellTestPassed = false;
+    const enabled = !!el("settingsIdoSellEnabled")?.checked;
+    updateIdoSellSaveButtonEnabled(enabled, false);
+    setIdoSellStatus(enabled ? "Wykonaj pozytywny test połączenia, aby zapisać integrację." : "Integracja IdoSell jest wyłączona.");
+  }
 
   const open = async () => {
     await fillForm();
@@ -143,6 +202,7 @@ export function initSettingsModal({
 
   const fullNameEl = el("settingsProfileFullName");
   const initialsEl = el("settingsProfileInitials");
+  const idosellEnabledEl = el("settingsIdoSellEnabled");
   const idosellBaseUrlEl = el("settingsIdoSellBaseUrl");
   const idosellApiKeyEl = el("settingsIdoSellApiKey");
 
@@ -158,6 +218,31 @@ export function initSettingsModal({
 
   idosellBaseUrlEl?.addEventListener("blur", () => {
     idosellBaseUrlEl.value = normalizeBaseUrl(idosellBaseUrlEl.value);
+  });
+
+  idosellBaseUrlEl?.addEventListener("input", () => {
+    resetIdoSellTestState();
+  });
+
+  idosellApiKeyEl?.addEventListener("input", () => {
+    resetIdoSellTestState();
+  });
+
+  idosellEnabledEl?.addEventListener("change", async () => {
+    const enabled = !!idosellEnabledEl.checked;
+    setIdoSellSectionEnabled(enabled);
+    idosellTestPassed = false;
+    updateIdoSellSaveButtonEnabled(enabled, false);
+    await setUserSettings({
+      integrations: {
+        idosell: { enabled },
+      },
+    });
+    setIdoSellStatus(enabled ? "Wykonaj pozytywny test połączenia, aby zapisać integrację." : "Integracja IdoSell jest wyłączona.");
+    showToast(
+      enabled ? "Włączono integrację IdoSell." : "Wyłączono integrację IdoSell.",
+      { type: "info", ms: 2200 }
+    );
   });
 
   el("btnSettingsSaveProfile")?.addEventListener("click", async () => {
@@ -187,29 +272,64 @@ export function initSettingsModal({
   });
 
   el("btnSettingsSaveIdoSell")?.addEventListener("click", async () => {
-    const baseUrl = normalizeBaseUrl(idosellBaseUrlEl?.value);
+    const baseUrlCheck = validateIdoSellBaseUrl(idosellBaseUrlEl?.value);
     const apiKey = String(idosellApiKeyEl?.value || "").trim();
+    const hasStoredSecret = String(idosellApiKeyEl?.dataset?.hasStoredSecret || "0") === "1";
 
-    await setUserSettings({
+    if (!baseUrlCheck.ok) {
+      setIdoSellStatus(baseUrlCheck.message, "error");
+      showToast(baseUrlCheck.message, { type: "error", ms: 3200 });
+      return;
+    }
+    const baseUrl = baseUrlCheck.normalizedBaseUrl;
+
+    const patch = {
       integrations: {
-        idosell: { baseUrl, apiKey },
+        idosell: { enabled: true, baseUrl },
       },
-    });
+    };
+
+    if (apiKey) {
+      patch.integrations.idosell.apiKey = apiKey;
+    }
+
+    const next = await setUserSettings(patch);
 
     if (idosellBaseUrlEl) idosellBaseUrlEl.value = baseUrl;
-    setIdoSellStatus("Dane integracji zapisane. Możesz teraz uruchomić test połączenia.");
+    configureIdoSellApiKeyField(idosellApiKeyEl, !!next?.integrations?.idosell?.hasApiKey || hasStoredSecret || !!apiKey);
+    idosellTestPassed = false;
+    updateIdoSellSaveButtonEnabled(true, false);
+    setIdoSellStatus(
+      apiKey
+        ? "Dane integracji zapisane. Klucz API został zapisany bezpiecznie w magazynie systemowym."
+        : "Dane integracji zapisane. Istniejący klucz API pozostał bez zmian."
+    );
     showToast("Zapisano ustawienia integracji IdoSell.", { type: "info", ms: 2400 });
   });
 
   el("btnSettingsTestIdoSell")?.addEventListener("click", async () => {
-    const baseUrl = normalizeBaseUrl(idosellBaseUrlEl?.value);
-    const apiKey = String(idosellApiKeyEl?.value || "").trim();
+    if (!idosellEnabledEl?.checked) {
+      setIdoSellStatus("Włącz integrację IdoSell, aby przetestować połączenie.", "error");
+      showToast("Włącz integrację IdoSell, aby przetestować połączenie.", { type: "error", ms: 3000 });
+      return;
+    }
 
-    if (!baseUrl || !apiKey) {
+    const baseUrlCheck = validateIdoSellBaseUrl(idosellBaseUrlEl?.value);
+    const apiKey = String(idosellApiKeyEl?.value || "").trim();
+    const hasStoredSecret = String(idosellApiKeyEl?.dataset?.hasStoredSecret || "0") === "1";
+
+    if (!baseUrlCheck.ok) {
+      setIdoSellStatus(baseUrlCheck.message, "error");
+      showToast(baseUrlCheck.message, { type: "error", ms: 3200 });
+      return;
+    }
+
+    if (!apiKey && !hasStoredSecret) {
       setIdoSellStatus("Uzupełnij Base URL i klucz API przed testem.", "error");
       showToast("Uzupełnij Base URL i klucz API.", { type: "error", ms: 2800 });
       return;
     }
+    const baseUrl = baseUrlCheck.normalizedBaseUrl;
 
     if (idosellBaseUrlEl) idosellBaseUrlEl.value = baseUrl;
     setIdoSellStatus("Trwa test połączenia z IdoSell...");
@@ -225,17 +345,18 @@ export function initSettingsModal({
       setIdoSellStatus(`${result?.message || "Brak odpowiedzi z testu."}${suffix}`, result?.ok ? "success" : "error");
 
       if (result?.ok) {
-        await setUserSettings({
-          integrations: {
-            idosell: { baseUrl, apiKey },
-          },
-        });
+        idosellTestPassed = true;
+        updateIdoSellSaveButtonEnabled(true, true);
         showToast("Połączenie z IdoSell zostało potwierdzone.", { type: "info", ms: 2800 });
       } else {
+        idosellTestPassed = false;
+        updateIdoSellSaveButtonEnabled(true, false);
         showToast("Test połączenia z IdoSell nie powiódł się.", { type: "error", ms: 3200 });
       }
     } catch (e) {
       console.warn("IdoSell connection test failed:", e);
+      idosellTestPassed = false;
+      updateIdoSellSaveButtonEnabled(true, false);
       setIdoSellStatus(`Nie udało się wykonać testu: ${String(e?.message || e)}`, "error");
       showToast("Nie udało się wykonać testu IdoSell API.", { type: "error", ms: 3200 });
     }
