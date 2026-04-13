@@ -715,13 +715,12 @@ export async function generatePdf({ onBefore } = {}) {
 
   const versionText = getOfferVersionTextForPdf(lang);
   if (versionText) {
-    const versionY = headerBlockBottomY + 4.8;
+    const versionY = afterLogoY - 1.2;
     doc.setFont(fontName, "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(120, 130, 142);
-    doc.text(pdfSafeText(versionText), margin, versionY, { align: "left" });
+    doc.text(pdfSafeText(versionText), pageW - margin, versionY, { align: "right" });
     doc.setTextColor(0);
-    headerBlockBottomY = versionY;
   }
 
   // ✅ mniejszy odstęp do tabeli
