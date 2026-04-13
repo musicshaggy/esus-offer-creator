@@ -1,11 +1,11 @@
 {
   "name": "esus-quote-generator",
-  "version": "1.3.8",
+  "version": "1.4.0",
   "main": "main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "pack": "electron-builder --dir", 
+    "pack": "electron-builder --dir",
     "dist": "electron-builder"
   },
   "devDependencies": {
@@ -29,7 +29,7 @@
     "win": {
       "icon": "build/favicon.ico"
     },
-	"publish": [
+    "publish": [
       {
         "provider": "github",
         "owner": "musicshaggy",
