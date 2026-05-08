@@ -1145,13 +1145,11 @@ async function fetchClientFromIdoSellByNip(nip) {
     }
   }
 
-  const searchBodyCandidates = nipVariants.flatMap((nipVariant) => [
-    { clientNip: nipVariant },
-    { clientNip: nipVariant, resultsLimit: 1 },
-    { clientNip: nipVariant, resultsLimit: 1, resultsPage: 1 },
-    { searchParameters: { clientNip: nipVariant } },
-    { searchParameters: { clientNip: nipVariant }, resultsLimit: 1, resultsPage: 1 },
-  ]);
+  const searchBodyCandidates = nipVariants.map((nipVariant) => ({
+    params: {
+      clientNip: nipVariant,
+    },
+  }));
 
   for (const body of searchBodyCandidates) {
     try {
