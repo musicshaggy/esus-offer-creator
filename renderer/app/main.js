@@ -1,7 +1,7 @@
 import { el, q } from "./ui/dom.js";
 import { todayYMD, escapeHtml, money } from "./utils/format.js";
 
-import { store, setItems, getItems, addItem } from "./state/store.js";
+import { store, setItems, getItems, addItem, setOffer } from "./state/store.js";
 import { recalcTotalsUI, getTotalsUI } from "./ui/totalsPanel.js";
 
 import { initWindowControls } from "./ui/windowControls.js";
@@ -201,6 +201,20 @@ function normalizeItem(it = {}) {
   const lifetime = !!w.lifetime;
   const months = lifetime ? 0 : Math.max(0, parseInt(w.months ?? 0, 10) || 0);
   const nbd = !!w.nbd;
+  const iaiSync = it?.iaiSync && typeof it.iaiSync === "object"
+    ? {
+        provider: String(it.iaiSync.provider || "idosell"),
+        synced: it.iaiSync.synced === true,
+        syncedAt: String(it.iaiSync.syncedAt || ""),
+        productId: String(it.iaiSync.productId || ""),
+        productCode: String(it.iaiSync.productCode || ""),
+        productName: String(it.iaiSync.productName || ""),
+        producerCode: String(it.iaiSync.producerCode || ""),
+        producer: String(it.iaiSync.producer || ""),
+        priceGross: Number(it.iaiSync.priceGross || 0),
+        currency: String(it.iaiSync.currency || "PLN").toUpperCase(),
+      }
+    : null;
 
   return {
     desc: it.desc ?? "",
@@ -211,6 +225,7 @@ function normalizeItem(it = {}) {
     qty: Math.max(1, parseInt(it.qty ?? 1, 10) || 1),
     warranty: { months, nbd, lifetime },
     internalNote: String(it.internalNote ?? ""),
+    iaiSync,
   };
 }
 
@@ -268,6 +283,32 @@ function wirePdfButton() {
         recalcTotalsUI();
       },
     });
+  });
+}
+
+function wireIaiConvertReviewButton() {
+  el("btnConvertToIaiOrder")?.addEventListener("click", () => {
+    if (!store.items.length) {
+      showToast("Brak pozycji do sprawdzenia.", { type: "info", ms: 2400 });
+      return;
+    }
+
+    setOffer({ iaiSyncReviewRequested: true });
+
+    renderItems({
+      onTotalsChanged: recalcTotalsUI,
+      onStateChanged: () => scheduleAutosave(autosaveActiveOffer),
+    });
+
+    const missingCount = store.items.filter((item) => !(item?.iaiSync && item.iaiSync.synced)).length;
+    if (missingCount > 0) {
+      showToast(`Do synchronizacji z IAI pozostalo ${missingCount} ${missingCount === 1 ? "pozycja" : missingCount < 5 ? "pozycje" : "pozycji"}.`, {
+        type: "info",
+        ms: 3200,
+      });
+    } else {
+      showToast("Wszystkie pozycje sa zsynchronizowane z IAI.", { type: "info", ms: 2600 });
+    }
   });
 }
 
@@ -567,6 +608,7 @@ async function init() {
   wireAddItemButtons();
   wireCopyItemsHtmlButton();
   wirePdfButton();
+  wireIaiConvertReviewButton();
   initClientSuggestions({
     onStateChanged: () => scheduleAutosave(autosaveActiveOffer),
   });

@@ -180,19 +180,22 @@ function drawPageOverlays(doc, { fontName, lang, pageW, pageH, margin }) {
 }
 
 function formatCustomerBlock(lang) {
-  const lines = [];
   const v = (id) => (document.getElementById(id)?.value ?? "").trim();
   const name = v("custName");
   const nip = v("custNip");
   const addr = v("custAddr");
   const contact = v("custContact");
 
-  if (name) lines.push(name);
-  if (nip) lines.push(`NIP: ${nip}`);
-  if (addr) lines.push(addr);
-  if (contact) lines.push(contact);
+  if (!name && !nip && !addr && !contact) {
+    return { lines: [t(lang, "missingData")] };
+  }
 
-  return lines.length ? lines : [t(lang, "missingData")];
+  return {
+    name,
+    nip: nip ? `NIP: ${nip}` : "",
+    addr,
+    contact,
+  };
 }
 
 function formatCreatorBlock(lang) {
@@ -263,11 +266,35 @@ function drawHeaderCard(doc, {
   const colW = (w - colGap) / 2;
 
   const L = Array.isArray(leftLines) ? leftLines.filter(Boolean) : [];
-  const R = Array.isArray(rightLines) ? rightLines.filter(Boolean) : [];
+  const customerBlock =
+    rightLines && !Array.isArray(rightLines) && typeof rightLines === "object"
+      ? rightLines
+      : { lines: Array.isArray(rightLines) ? rightLines.filter(Boolean) : [] };
+  const R = Array.isArray(customerBlock.lines) ? customerBlock.lines.filter(Boolean) : [];
+  const rightInnerW = colW - padX * 2;
+
+  doc.setFont(fontName, "bold");
+  doc.setFontSize(8.4);
+  const customerNameWrapped = customerBlock.name
+    ? doc.splitTextToSize(pdfSafeText(customerBlock.name), rightInnerW).slice(0, 2)
+    : [];
+  doc.setFont(fontName, "normal");
+  doc.setFontSize(8.6);
+  const wrapMetaLine = (line, maxLines = 2) =>
+    doc
+      .splitTextToSize(pdfSafeText(line), rightInnerW)
+      .slice(0, maxLines)
+      .filter(Boolean);
+  const customerMetaLines = [
+    ...wrapMetaLine(customerBlock.nip, 1),
+    ...wrapMetaLine(customerBlock.addr, 2),
+    ...wrapMetaLine(customerBlock.contact, 1),
+  ];
+  const rightStructuredLines = customerNameWrapped.length ? [...customerNameWrapped, ...customerMetaLines] : R;
 
   // wysokość danych (nie liczymy tytułu)
   const leftDataH = Math.max(0, L.length) * rowH;
-  const rightDataH = Math.max(0, R.length) * rowH;
+  const rightDataH = Math.max(0, rightStructuredLines.length) * rowH;
 
   // wewnętrzna przestrzeń na dane (stała dla obu kolumn)
   const dataAreaH = Math.max(leftDataH, rightDataH, rowH); // min. 1 linia optycznie
@@ -304,7 +331,7 @@ function drawHeaderCard(doc, {
   const dataAreaCenterY = dataAreaTop + dataAreaH / 2;
 
   const leftStartY = dataAreaCenterY - leftDataH / 2 + (L.length ? (rowH * 0.75) : 0);
-  const rightStartY = dataAreaCenterY - rightDataH / 2 + (R.length ? (rowH * 0.75) : 0);
+  const rightStartY = dataAreaCenterY - rightDataH / 2 + (rightStructuredLines.length ? (rowH * 0.75) : 0);
 
   doc.setFont(fontName, "normal");
   doc.setFontSize(9);
@@ -319,9 +346,25 @@ function drawHeaderCard(doc, {
 
   // right lines
   let ry = rightStartY;
-  for (const line of R) {
-    doc.text(pdfSafeText(line), rightX, ry, { align: "right" });
-    ry += rowH;
+  if (customerNameWrapped.length) {
+    doc.setFont(fontName, "bold");
+    doc.setFontSize(8.4);
+    for (const line of customerNameWrapped) {
+      doc.text(line, rightX, ry, { align: "right" });
+      ry += rowH;
+    }
+
+    doc.setFont(fontName, "normal");
+    doc.setFontSize(8.6);
+    for (const line of customerMetaLines) {
+      doc.text(line, rightX, ry, { align: "right" });
+      ry += rowH;
+    }
+  } else {
+    for (const line of R) {
+      doc.text(pdfSafeText(line), rightX, ry, { align: "right" });
+      ry += rowH;
+    }
   }
 
   // ===== divider: krótszy, tylko w obszarze danych =====

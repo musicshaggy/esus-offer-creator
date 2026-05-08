@@ -18,7 +18,13 @@ function syncOfferCcyFromPayload(payload) {
   );
 
   // ✅ Źródło prawdy dla bieżącej sesji oferty
-  setOffer({ ccy, lang, vatCode, lastItemsEditedAt });
+  setOffer({
+    ccy,
+    lang,
+    vatCode,
+    lastItemsEditedAt,
+    iaiSyncReviewRequested: false,
+  });
 
   // ✅ Jeśli gdzieś jeszcze patrzysz na settings (np. formatowanie), to synchronizuj
   setSettings({ offerCcy: ccy, lang, vatCode });

@@ -10,6 +10,7 @@ app.setPath("userData", path.join(os.homedir(), "AppData", "Local", "ESUS-Quote"
 let splashWin = null;
 let win = null;
 const idosellOpenApiCache = new Map();
+const idosellProductSearchCache = new Map();
 
 function closeSplash() {
   if (splashWin && !splashWin.isDestroyed()) {
@@ -542,7 +543,7 @@ function getIdoSellIntegrationSettings() {
   };
 }
 
-async function callIdoSellJson(url, { method = "GET", apiKey, body } = {}) {
+async function callIdoSellJson(url, { method = "GET", apiKey, body, timeoutMs } = {}) {
   const options = {
     method,
     headers: {
@@ -556,7 +557,7 @@ async function callIdoSellJson(url, { method = "GET", apiKey, body } = {}) {
     options.body = JSON.stringify(body);
   }
 
-  return await fetchJsonWithTimeout(url, options);
+  return await fetchJsonWithTimeout(url, options, timeoutMs);
 }
 
 function getOperationParameters(pathConfig, operation) {
@@ -1300,6 +1301,309 @@ function normalizeNip(nip) {
   return String(nip || "").replace(/\D+/g, "");
 }
 
+function normalizeSearchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function collectObjectsDeep(payload, limit = 400) {
+  const out = [];
+  const queue = [payload];
+  const visited = new Set();
+
+  while (queue.length && out.length < limit) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object") continue;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    if (Array.isArray(current)) {
+      current.forEach((item) => queue.push(item));
+      continue;
+    }
+
+    out.push(current);
+    Object.values(current).forEach((value) => {
+      if (value && typeof value === "object") queue.push(value);
+    });
+  }
+
+  return out;
+}
+
+function pickFirstValue(source, keys = []) {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return value;
+    }
+  }
+  return "";
+}
+
+function toFiniteNumber(value) {
+  const normalized = String(value ?? "")
+    .replace(/\s+/g, "")
+    .replace(",", ".");
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : null;
+}
+
+function mapIdoSellProductCandidate(candidate) {
+  if (!candidate || typeof candidate !== "object") return null;
+
+  const descriptions = Array.isArray(candidate?.productDescriptionsLangData)
+    ? candidate.productDescriptionsLangData
+    : [];
+  const preferredDescription =
+    descriptions.find((entry) => String(entry?.langId || "").toLowerCase() === "pol") ||
+    descriptions.find((entry) => String(entry?.langId || "").toLowerCase() === "eng") ||
+    descriptions.find((entry) => String(entry?.productName || "").trim()) ||
+    null;
+  const sizeAttributes = Array.isArray(candidate?.productSizesAttributes)
+    ? candidate.productSizesAttributes
+    : [];
+  const preferredSize =
+    sizeAttributes.find((entry) => String(entry?.productSizeCodeExternal || "").trim()) ||
+    sizeAttributes[0] ||
+    null;
+
+  const id = String(
+    pickFirstValue(candidate, [
+      "productId",
+      "product_id",
+      "productid",
+      "id",
+      "productSizeId",
+      "productSize_id",
+    ])
+  ).trim();
+
+  const name = String(
+    preferredDescription?.productName ||
+      preferredDescription?.productDescription ||
+      pickFirstValue(candidate, [
+        "productName",
+        "name",
+        "product_name",
+        "productDescription",
+        "productLongName",
+        "productTitle",
+      ])
+  ).trim();
+
+  const code = String(
+    preferredSize?.productSizeCodeExternal ||
+      preferredSize?.productCode ||
+      pickFirstValue(candidate, [
+        "productCode",
+        "code",
+        "productSymbol",
+        "symbol",
+        "productIndex",
+        "productSizeCodeExternal",
+        "productSku",
+        "sku",
+        "sizeCodeExternal",
+      ])
+  ).trim();
+
+  const producerCode = String(
+    preferredSize?.productSizeCodeProducer ||
+      pickFirstValue(candidate, [
+        "producerCode",
+        "supplierCode",
+        "productProducerCode",
+        "codeProducer",
+      ])
+  ).trim();
+
+  const producer = String(
+    pickFirstValue(candidate, [
+      "producerName",
+      "brandName",
+      "brand",
+      "vendorName",
+      "manufacturerName",
+      "responsibleProducerCode",
+    ])
+  ).trim();
+
+  const priceGross =
+    toFiniteNumber(
+      pickFirstValue(candidate, [
+        "productRetailPrice",
+        "productPrice",
+        "price",
+        "priceGross",
+        "grossPrice",
+        "productPriceGross",
+      ])
+    ) ??
+    toFiniteNumber(candidate?.productPrices?.priceRetailGross) ??
+    toFiniteNumber(candidate?.productPriceData?.priceGross);
+
+  const currency = String(
+    pickFirstValue(candidate, [
+      "currency",
+      "priceCurrency",
+      "productPriceCurrency",
+      "currencyId",
+    ]) || "PLN"
+  ).trim().toUpperCase();
+
+  if (!id && !name && !code) return null;
+
+  return {
+    id,
+    name,
+    code,
+    producerCode,
+    producer,
+    priceGross,
+    currency,
+  };
+}
+
+function scoreIdoSellProductResult(product, query) {
+  const q = normalizeSearchText(query);
+  if (!q) return 0;
+
+  const name = normalizeSearchText(product?.name);
+  const code = normalizeSearchText(product?.code);
+  const producerCode = normalizeSearchText(product?.producerCode);
+  const producer = normalizeSearchText(product?.producer);
+  const haystack = [name, code, producerCode, producer].filter(Boolean).join(" ");
+
+  let score = 0;
+  if (name === q) score += 200;
+  if (code === q || producerCode === q) score += 220;
+  if (name.startsWith(q)) score += 120;
+  if (code.startsWith(q) || producerCode.startsWith(q)) score += 130;
+  if (name.includes(q)) score += 70;
+  if (code.includes(q) || producerCode.includes(q)) score += 90;
+  if (producer.includes(q)) score += 24;
+
+  const qTokens = q.split(/\s+/).filter(Boolean);
+  for (const token of qTokens) {
+    if (token.length < 2) continue;
+    if (name.includes(token)) score += 12;
+    if (code.includes(token) || producerCode.includes(token)) score += 16;
+    if (producer.includes(token)) score += 6;
+  }
+
+  if (haystack.length && !score) {
+    const compactQuery = q.replace(/\s+/g, "");
+    const compactHaystack = haystack.replace(/\s+/g, "");
+    if (compactHaystack.includes(compactQuery)) score += 40;
+  }
+
+  return score;
+}
+
+function pickIdoSellProductsFromPayload(payload, query) {
+  const mapped = [];
+  const seen = new Set();
+  const candidates = Array.isArray(payload?.results) ? payload.results : collectObjectsDeep(payload);
+
+  for (const candidate of candidates) {
+    const product = mapIdoSellProductCandidate(candidate);
+    if (!product) continue;
+
+    const key = `${product.id}::${product.code || ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const score = scoreIdoSellProductResult(product, query);
+    if (score <= 0) continue;
+    mapped.push({ ...product, score });
+  }
+
+  return mapped
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return String(a.name || "").localeCompare(String(b.name || ""), "pl");
+    })
+    .slice(0, 12);
+}
+
+async function searchIdoSellProducts(query) {
+  const q = String(query || "").trim();
+  if (q.length < 2) {
+    return { ok: false, message: "Wpisz co najmniej 2 znaki indeksu.", products: [] };
+  }
+
+  const normalizedIndex = q.replace(/\s+/g, "").trim();
+  const cacheKey = normalizeSearchText(normalizedIndex);
+  const cached = idosellProductSearchCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < 5 * 60 * 1000) {
+    return { ok: true, products: cached.products, cached: true };
+  }
+
+  const idosell = getIdoSellIntegrationSettings();
+  if (!idosell.enabled) {
+    return { ok: false, message: "Integracja IdoSell jest wyłączona.", products: [] };
+  }
+  if (!idosell.baseUrl || !idosell.apiKey) {
+    return { ok: false, message: "Uzupełnij i zapisz ustawienia integracji IdoSell.", products: [] };
+  }
+
+  const url = buildIdoSellAdminUrl(idosell.baseUrl, "products/products/search");
+  const bodyCandidates = [
+    {
+      params: {
+        productIndexes: [{ productIndex: normalizedIndex }],
+      },
+    },
+  ];
+
+  let lastError = "";
+  for (const body of bodyCandidates) {
+    try {
+      const { response, json } = await callIdoSellJson(url, {
+        method: "POST",
+        apiKey: idosell.apiKey,
+        body,
+        timeoutMs: 25000,
+      });
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          return { ok: false, message: "IdoSell odrzucił klucz API.", products: [] };
+        }
+        lastError = `API odpowiedziało statusem ${response.status}.`;
+        continue;
+      }
+
+      const products = pickIdoSellProductsFromPayload(json, normalizedIndex);
+      if (!products.length) {
+        lastError = "Nie znaleziono produktów dla podanego zapytania.";
+        continue;
+      }
+
+      idosellProductSearchCache.set(cacheKey, {
+        at: Date.now(),
+        products,
+      });
+      return { ok: true, products };
+    } catch (error) {
+      if (String(error?.name || "") === "AbortError" || /aborted/i.test(String(error?.message || ""))) {
+        lastError = "Wyszukiwanie produktu przekroczylo limit czasu IdoSell. Sprobuj ponownie lub sprawdz indeks.";
+      } else
+      lastError = String(error?.message || error || "Nieznany błąd.");
+    }
+  }
+
+  return {
+    ok: false,
+    message: lastError || "Nie udało się wyszukać produktów w IdoSell.",
+    products: [],
+  };
+}
+
 function buildNipSearchVariants(nip) {
   const normalized = normalizeNip(nip);
   if (!normalized) return [];
@@ -1721,6 +2025,10 @@ ipcMain.handle("clients:lookupByNip", async (_evt, nip) => {
 
 ipcMain.handle("clients:deleteByNip", async (_evt, nip) => {
   return deleteClientByNip(String(nip || ""));
+});
+
+ipcMain.handle("idosell:searchProducts", async (_evt, query) => {
+  return await searchIdoSellProducts(String(query || ""));
 });
 
 // ===== IPC: offers CRUD =====

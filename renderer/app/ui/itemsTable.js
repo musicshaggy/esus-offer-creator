@@ -2,6 +2,7 @@ import { el, escapeHtml, toNumber, money } from "../utils/format.js";
 import { store, removeItem, updateItem, moveItem } from "../state/store.js";
 import { itemNetAfterDiscount, calcRowProfitAndMargin } from "../calc/pricing.js";
 import { getRateToPLN } from "../utils/exchangeRates.js";
+import { getVatRateFromUI } from "../utils/vat.js";
 
 function offerCcy() {
   return String(store.offer?.ccy || store.settings?.offerCcy || "PLN").toUpperCase();
@@ -13,6 +14,9 @@ let _discTipActive = null;
 let _noteTipEl = null;
 let _noteTipActive = null;
 let _dragItemIndex = null;
+let _itemsSyncGutterWrap = null;
+let _itemsSyncGutterEl = null;
+let _itemsSyncGutterBound = false;
 
 function ensureDiscountTip() {
   if (_discTipEl) return _discTipEl;
@@ -299,7 +303,10 @@ function ensureFloatingMenu() {
     const ccy = String(opt.getAttribute("data-ccy") || "PLN").toUpperCase();
     const { i, btnEl } = _ccyCtx;
 
-    updateItem(i, { buyCcy: ccy });
+    updateItem(i, {
+      buyCcy: ccy,
+      ...buildSyncResetPatch(i, { buyCcy: ccy }),
+    });
 
     // update UI buttona
     btnEl.textContent = ccy;
@@ -369,6 +376,167 @@ let _noteModalSaveBtn = null;
 let _noteModalClearBtn = null;
 let _noteModalBackdrop = null;
 let _noteModalCtx = null;
+let _productSearchModalEl = null;
+let _productSearchModalTitle = null;
+let _productSearchModalSub = null;
+let _productSearchModalInput = null;
+let _productSearchModalResults = null;
+let _productSearchModalStatus = null;
+let _productSearchModalSpinner = null;
+let _productSearchModalSubmit = null;
+let _productSearchModalCtx = null;
+let _productSearchModalProducts = [];
+
+function roundMoney(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function ensureItemsSyncGutter() {
+  const area = document.querySelector(".itemsTableArea");
+  const wrap = area?.querySelector(".tableWrap");
+  if (!area || !wrap) return null;
+
+  if (!_itemsSyncGutterEl || _itemsSyncGutterWrap !== area) {
+    _itemsSyncGutterEl?.remove();
+    const gutter = document.createElement("div");
+    gutter.className = "itemsSyncGutter";
+    area.appendChild(gutter);
+    _itemsSyncGutterWrap = area;
+    _itemsSyncGutterEl = gutter;
+  }
+
+  if (!_itemsSyncGutterBound) {
+    const refresh = () => updateItemsSyncGutter();
+    wrap.addEventListener("scroll", refresh);
+    window.addEventListener("resize", refresh);
+    _itemsSyncGutterBound = true;
+  }
+
+  return _itemsSyncGutterEl;
+}
+
+function updateItemsSyncGutter() {
+  const area = document.querySelector(".itemsTableArea");
+  const wrap = area?.querySelector(".tableWrap");
+  const tbody = el("itemsBody");
+  const gutter = ensureItemsSyncGutter();
+  if (!area || !wrap || !tbody || !gutter) return;
+
+  const wrapRect = wrap.getBoundingClientRect();
+  gutter.innerHTML = "";
+
+  Array.from(tbody.querySelectorAll("tr")).forEach((row) => {
+    const state = row.classList.contains("itemRowSync-synced")
+      ? "synced"
+      : row.classList.contains("itemRowSync-missing")
+        ? "missing"
+        : "";
+    if (!state) return;
+
+    const rowRect = row.getBoundingClientRect();
+    const bar = document.createElement("div");
+    bar.className = `itemsSyncGutterBar is-${state}`;
+    bar.style.top = `${rowRect.top - wrapRect.top + 14}px`;
+    bar.style.height = `${Math.max(0, rowRect.height - 28)}px`;
+    gutter.appendChild(bar);
+  });
+}
+
+function normalizeSyncText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeWarrantyState(value) {
+  const warranty = value && typeof value === "object" ? value : {};
+  return {
+    months: Math.max(0, parseInt(warranty.months || "0", 10) || 0),
+    lifetime: warranty.lifetime === true,
+    nbd: warranty.nbd === true,
+  };
+}
+
+function valuesDifferForSync(key, currentValue, nextValue) {
+  switch (key) {
+    case "desc":
+      return normalizeSyncText(currentValue) !== normalizeSyncText(nextValue);
+    case "qty":
+      return Math.max(1, parseInt(currentValue || "1", 10) || 1) !== Math.max(1, parseInt(nextValue || "1", 10) || 1);
+    case "buyNet":
+    case "net":
+    case "discount":
+      return toNumber(currentValue) !== toNumber(nextValue);
+    case "buyCcy":
+      return String(currentValue || "PLN").toUpperCase() !== String(nextValue || "PLN").toUpperCase();
+    case "warranty":
+      return JSON.stringify(normalizeWarrantyState(currentValue)) !== JSON.stringify(normalizeWarrantyState(nextValue));
+    default:
+      return currentValue !== nextValue;
+  }
+}
+
+function buildSyncResetPatch(itemIdx, patch) {
+  const item = store.items[itemIdx];
+  const sync = item?.iaiSync;
+  if (!(item && sync && sync.synced && patch && typeof patch === "object")) return {};
+
+  if (Object.prototype.hasOwnProperty.call(patch, "desc")) {
+    const nextDesc = patch.desc;
+    if (valuesDifferForSync("desc", item.desc, nextDesc)) {
+      return { iaiSync: null };
+    }
+  }
+
+  return {};
+}
+
+function productGrossToNet(priceGross) {
+  const vatRate = Number(getVatRateFromUI() || 0);
+  const gross = Number(priceGross || 0);
+  return roundMoney(vatRate > 0 ? gross / (1 + vatRate) : gross);
+}
+
+function getProductDisplayName(product, fallback = "") {
+  return String(
+    product?.name ||
+      product?.productName ||
+      product?.title ||
+      product?.description ||
+      product?.code ||
+      fallback ||
+      ""
+  ).trim();
+}
+
+function applyIdoSellProductToItem(itemIdx, product, { onTotalsChanged, onStateChanged, descInput } = {}) {
+  if (!product || !Number.isFinite(itemIdx) || !store.items[itemIdx]) return false;
+  const desc = getProductDisplayName(product, store.items[itemIdx]?.desc);
+
+  if (descInput) {
+    descInput.value = desc;
+  }
+
+  updateItem(itemIdx, {
+    desc,
+    net: productGrossToNet(product?.priceGross),
+    iaiSync: {
+      provider: "idosell",
+      synced: true,
+      syncedAt: new Date().toISOString(),
+      productId: product?.id ? String(product.id) : "",
+      productCode: String(product?.code || "").trim(),
+      productName: desc,
+      producerCode: String(product?.producerCode || "").trim(),
+      producer: String(product?.producer || "").trim(),
+      priceGross: Number(product?.priceGross || 0),
+      currency: String(product?.currency || offerCcy()).toUpperCase(),
+    },
+  });
+
+  renderItems({ onTotalsChanged, onStateChanged });
+  onTotalsChanged?.();
+  onStateChanged?.();
+  return true;
+}
 
 function ensureNoteModal() {
   if (_noteModalEl) return _noteModalEl;
@@ -464,6 +632,258 @@ function closeNoteModal() {
   _noteModalCtx = null;
 }
 
+function ensureProductSearchModal() {
+  if (_productSearchModalEl) return _productSearchModalEl;
+
+  const modal = document.createElement("div");
+  modal.className = "itemSearchModal";
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="itemSearchModal__backdrop" data-product-search-close="1"></div>
+    <div class="itemSearchModal__dialog" role="dialog" aria-modal="true" aria-labelledby="itemSearchModalTitle">
+      <div class="itemSearchModal__head">
+        <div class="itemSearchModal__title" id="itemSearchModalTitle">Wyszukaj produkt w IdoSell</div>
+        <button type="button" class="itemSearchModal__x" data-product-search-close="1" aria-label="Zamknij">×</button>
+      </div>
+      <div class="itemSearchModal__sub">Wpisz nazwę lub fragment modelu. Integracja z API IdoSell zostanie podpięta w kolejnym kroku.</div>
+      <div class="itemSearchModal__searchRow">
+        <input class="itemSearchModal__input" type="text" placeholder="Np. Ubiquiti UDM-PRO-MAX" />
+        <button type="button" class="secondary itemSearchModal__submit" disabled>
+          <i class="fa-solid fa-magnifying-glass"></i>
+          Szukaj w IdoSell
+        </button>
+      </div>
+      <div class="itemSearchModal__status">Wpisz nazwę produktu i kliknij Szukaj.</div>
+      <div class="itemSearchModal__results"></div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  _productSearchModalEl = modal;
+  _productSearchModalTitle = modal.querySelector(".itemSearchModal__title");
+  _productSearchModalSub = modal.querySelector(".itemSearchModal__sub");
+  _productSearchModalInput = modal.querySelector(".itemSearchModal__input");
+  _productSearchModalResults = modal.querySelector(".itemSearchModal__results");
+  _productSearchModalStatus = modal.querySelector(".itemSearchModal__status");
+  _productSearchModalSubmit = modal.querySelector(".itemSearchModal__submit");
+
+  if (_productSearchModalStatus) {
+    const statusRow = document.createElement("div");
+    statusRow.className = "itemSearchModal__statusRow";
+
+    const spinner = document.createElement("span");
+    spinner.className = "itemSearchModal__spinner";
+    spinner.setAttribute("aria-hidden", "true");
+
+    _productSearchModalStatus.parentNode?.insertBefore(statusRow, _productSearchModalStatus);
+    statusRow.appendChild(spinner);
+    statusRow.appendChild(_productSearchModalStatus);
+    _productSearchModalSpinner = spinner;
+  }
+
+  if (_productSearchModalSub) {
+    _productSearchModalSub.textContent =
+      "Wpisz indeks produktu z IdoSell. Szukamy po indeksie, zeby uniknac wolnego przeszukiwania calego katalogu.";
+  }
+  if (_productSearchModalInput) {
+    _productSearchModalInput.placeholder = "Np. UDM-PRO-MAX";
+  }
+  if (_productSearchModalSubmit) {
+    _productSearchModalSubmit.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Szukaj po indeksie';
+  }
+
+  const refreshSubmitState = () => {
+    if (!_productSearchModalSubmit || !_productSearchModalInput) return;
+    _productSearchModalSubmit.disabled = String(_productSearchModalInput.value || "").trim().length < 2;
+  };
+
+  const renderResults = (result) => {
+    if (!_productSearchModalResults || !_productSearchModalStatus) return;
+
+    const products = Array.isArray(result?.products) ? result.products : [];
+    _productSearchModalProducts = products;
+    if (!products.length) {
+      _productSearchModalResults.innerHTML = `
+        <div class="itemSearchModal__placeholder">
+          <div class="itemSearchModal__placeholderTitle">Brak wyników</div>
+          <div class="itemSearchModal__placeholderText">${result?.message || "Nie znaleziono produktów dla podanego zapytania."}</div>
+        </div>
+      `;
+      return;
+    }
+
+    _productSearchModalResults.innerHTML = products.map((product, index) => {
+      const title = escapeHtml(product?.name || product?.code || "Produkt bez nazwy");
+      const meta = [
+        product?.code ? `Kod: ${escapeHtml(product.code)}` : "",
+        product?.producer ? `Producent: ${escapeHtml(product.producer)}` : "",
+        product?.producerCode ? `Kod producenta: ${escapeHtml(product.producerCode)}` : "",
+      ].filter(Boolean).join(" · ");
+      const price = Number.isFinite(product?.priceGross)
+        ? `${money(product.priceGross, product.currency || "PLN")} brutto`
+        : "";
+
+      return `
+        <div class="itemSearchResultCard">
+          <div class="itemSearchResultMain">
+            <div class="itemSearchResultTitle">${title}</div>
+            ${meta ? `<div class="itemSearchResultMeta">${meta}</div>` : ""}
+          </div>
+          <div class="itemSearchResultSide">
+            ${price ? `<div class="itemSearchResultPrice">${escapeHtml(price)}</div>` : ""}
+            <button
+              type="button"
+              class="btnTiny itemSearchResultPick"
+              data-product-pick="${index}"
+            >
+              Dodaj
+            </button>
+          </div>
+        </div>
+      `;
+    }).join("");
+  };
+
+  const runSearch = async () => {
+    if (!_productSearchModalInput || !_productSearchModalStatus || !_productSearchModalSubmit) return;
+    const query = String(_productSearchModalInput.value || "").trim();
+    if (query.length < 2) return;
+
+    _productSearchModalSubmit.disabled = true;
+    _productSearchModalSpinner?.classList.add("is-active");
+    _productSearchModalStatus.textContent = "Wyszukiwanie produktów w IdoSell…";
+
+    try {
+      const result = await window.esusAPI?.idosellSearchProducts?.(query);
+      if (!_productSearchModalEl || _productSearchModalEl.hidden) return;
+
+      if (result?.ok) {
+        const count = Array.isArray(result.products) ? result.products.length : 0;
+        _productSearchModalStatus.textContent = result?.cached
+          ? `Znaleziono ${count} wyników (cache lokalny).`
+          : `Znaleziono ${count} wyników.`;
+      } else {
+        _productSearchModalStatus.textContent = result?.message || "Nie udało się wyszukać produktów.";
+      }
+
+      renderResults(result);
+    } catch (error) {
+      _productSearchModalStatus.textContent = "Nie udało się wyszukać produktów w IdoSell.";
+      renderResults({ ok: false, products: [], message: String(error?.message || error || "") });
+    } finally {
+      _productSearchModalSpinner?.classList.remove("is-active");
+      refreshSubmitState();
+    }
+  };
+
+  _productSearchModalInput?.addEventListener("input", () => {
+    refreshSubmitState();
+  });
+  _productSearchModalInput?.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    await runSearch();
+  });
+  _productSearchModalSubmit?.addEventListener("click", async () => {
+    await runSearch();
+  });
+
+  modal.addEventListener("click", (e) => {
+    if (e.target.closest('[data-product-search-close="1"]')) closeProductSearchModal();
+
+    const pickBtn = e.target.closest("[data-product-pick]");
+    if (!pickBtn) return;
+
+    const productIdx = parseInt(pickBtn.getAttribute("data-product-pick") || "-1", 10);
+    const product = _productSearchModalProducts[productIdx];
+    const itemIdx = _productSearchModalCtx?.i;
+    const applied = applyIdoSellProductToItem(itemIdx, product, {
+      onTotalsChanged: _productSearchModalCtx?.onTotalsChanged,
+      onStateChanged: _productSearchModalCtx?.onStateChanged,
+    });
+    if (applied) closeProductSearchModal();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (!_productSearchModalEl || _productSearchModalEl.hidden) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeProductSearchModal();
+    }
+  });
+
+  return modal;
+}
+
+function openProductSearchModal(i, { onTotalsChanged, onStateChanged } = {}) {
+  const modal = ensureProductSearchModal();
+  const item = store.items[i];
+  if (!modal || !item) return;
+
+  _productSearchModalCtx = { i, onTotalsChanged, onStateChanged };
+  _productSearchModalProducts = [];
+  if (_productSearchModalTitle) {
+    _productSearchModalTitle.textContent = `Wyszukaj produkt w IdoSell · pozycja ${i + 1}`;
+  }
+  if (_productSearchModalInput) {
+    _productSearchModalInput.value = String(item?.desc || "");
+  }
+  if (_productSearchModalStatus) {
+    _productSearchModalStatus.textContent = "Wpisz nazwę produktu i kliknij Szukaj.";
+  }
+  if (_productSearchModalResults) {
+    _productSearchModalResults.innerHTML = `
+      <div class="itemSearchModal__placeholder">
+        <div class="itemSearchModal__placeholderTitle">Gotowe do wyszukiwania</div>
+        <div class="itemSearchModal__placeholderText">Wyniki z największym dopasowaniem będą pokazywane na samej górze listy.</div>
+      </div>
+    `;
+  }
+  if (_productSearchModalTitle) {
+    _productSearchModalTitle.textContent = `Wyszukaj produkt po indeksie - pozycja ${i + 1}`;
+  }
+  if (_productSearchModalInput) {
+    _productSearchModalInput.value = "";
+    _productSearchModalInput.placeholder = "Np. UDM-PRO-MAX";
+  }
+  if (_productSearchModalStatus) {
+    _productSearchModalStatus.textContent = "Wpisz indeks produktu i kliknij Szukaj.";
+  }
+  _productSearchModalSpinner?.classList.remove("is-active");
+  if (_productSearchModalSubmit) {
+    _productSearchModalSubmit.disabled = true;
+  }
+
+  modal.hidden = false;
+  requestAnimationFrame(() => _productSearchModalInput?.focus());
+}
+
+function closeProductSearchModal() {
+  if (!_productSearchModalEl) return;
+  _productSearchModalEl.hidden = true;
+  _productSearchModalCtx = null;
+  _productSearchModalProducts = [];
+}
+
+async function quickSearchAndApplyProduct(i, query, buttonEl, { onTotalsChanged, onStateChanged, descInput } = {}) {
+  const q = String(query || "").trim();
+  if (!Number.isFinite(i) || i < 0 || q.length < 2 || !buttonEl) return;
+
+  buttonEl.classList.add("is-loading");
+  buttonEl.disabled = true;
+
+  try {
+    const result = await window.esusAPI?.idosellSearchProducts?.(q);
+    const product = Array.isArray(result?.products) ? result.products[0] : null;
+    if (!result?.ok || !product) return;
+
+    applyIdoSellProductToItem(i, product, { onTotalsChanged, onStateChanged, descInput });
+  } finally {
+    buttonEl.classList.remove("is-loading");
+    buttonEl.disabled = false;
+  }
+}
+
 export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
   const tbody = el("itemsBody");
   if (!tbody) return;
@@ -503,6 +923,13 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
     const wNbd = !!it?.warranty?.nbd;
     const wLifetime = !!it?.warranty?.lifetime;
     const hasInternalNote = !!String(it?.internalNote || "").trim();
+    const isIaiSynced = !!(it?.iaiSync && it.iaiSync.synced);
+    const showIaiSyncWarnings = !!store.offer?.iaiSyncReviewRequested;
+    const rowSyncClass = isIaiSynced
+      ? " itemRowSync itemRowSync-synced"
+      : showIaiSyncWarnings
+        ? " itemRowSync itemRowSync-missing"
+        : "";
 
     // ✅ initial profit/margin must use calcRowProfitAndMargin (currency-aware)
     const { profitLine, marginPct } = calcRowProfitAndMargin(it);
@@ -513,6 +940,7 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
     const buyCcy = String(it.buyCcy || "PLN").toUpperCase();
 
     const tr = document.createElement("tr");
+    tr.className = rowSyncClass.trim();
     tr.innerHTML = `
       <td>
         <div class="itemDescMeta" aria-hidden="true">
@@ -525,6 +953,15 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
             data-k="desc" data-i="${idx}"
             placeholder="Opis pozycji..."
             value="${escapeHtml(it.desc)}" />
+          <button
+            type="button"
+            class="itemSearchBtn"
+            data-item-search="${idx}"
+            title="Wyszukaj produkt w IdoSell"
+            aria-label="Wyszukaj produkt w IdoSell"
+          >
+            <i class="fa-solid fa-magnifying-glass"></i>
+          </button>
         </div>
 
         <div class="itemRowMetaActions">
@@ -733,11 +1170,19 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
         if (current.lifetime) return;
 
         const months = clampInt(e.target.value, 0, 120);
-        updateItem(i, { warranty: { ...current, months } });
+        const nextWarranty = { ...current, months };
+        updateItem(i, {
+          warranty: nextWarranty,
+          ...buildSyncResetPatch(i, { warranty: nextWarranty }),
+        });
       } else if (k === "warrantyNbd") {
         const current = store.items[i]?.warranty || { months: 0, nbd: false, lifetime: false };
         const nbd = !!e.target.checked;
-        updateItem(i, { warranty: { ...current, nbd } });
+        const nextWarranty = { ...current, nbd };
+        updateItem(i, {
+          warranty: nextWarranty,
+          ...buildSyncResetPatch(i, { warranty: nextWarranty }),
+        });
       } else if (k === "warrantyLifetime") {
         const current = store.items[i]?.warranty || { months: 0, nbd: false, lifetime: false };
         const lifetime = !!e.target.checked;
@@ -748,7 +1193,10 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
           months: lifetime ? 0 : Math.max(0, parseInt(current.months ?? 0, 10) || 0),
         };
 
-        updateItem(i, { warranty: nextWarranty });
+        updateItem(i, {
+          warranty: nextWarranty,
+          ...buildSyncResetPatch(i, { warranty: nextWarranty }),
+        });
 
         const tr = e.target.closest("tr");
         const monthsInput = tr?.querySelector(`input[data-k="warrantyMonths"][data-i="${i}"]`);
@@ -765,11 +1213,23 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
           }
         }
       } else if (k === "qty") {
-        updateItem(i, { [k]: Math.max(1, parseInt(e.target.value || "1", 10)) });
+        const nextQty = Math.max(1, parseInt(e.target.value || "1", 10));
+        updateItem(i, {
+          [k]: nextQty,
+          ...buildSyncResetPatch(i, { [k]: nextQty }),
+        });
       } else if (k === "desc") {
-        updateItem(i, { [k]: e.target.value });
+        const nextDesc = String(e.target.value || "");
+        updateItem(i, {
+          [k]: nextDesc,
+          ...buildSyncResetPatch(i, { [k]: nextDesc }),
+        });
       } else {
-        updateItem(i, { [k]: toNumber(e.target.value) });
+        const nextNumber = toNumber(e.target.value);
+        updateItem(i, {
+          [k]: nextNumber,
+          ...buildSyncResetPatch(i, { [k]: nextNumber }),
+        });
       }
 
       onTotalsChanged?.();
@@ -791,6 +1251,23 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
 
     ctrl.addEventListener("input", handler);
     ctrl.addEventListener("change", handler);
+  });
+
+  tbody.querySelectorAll('input[data-k="desc"]').forEach((input) => {
+    input.addEventListener("keydown", async (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+
+      const i = parseInt(input.getAttribute("data-i"), 10);
+      if (!Number.isFinite(i)) return;
+
+      const button = input.closest(".itemDescRow")?.querySelector("[data-item-search]");
+      await quickSearchAndApplyProduct(i, input.value, button, {
+        onTotalsChanged,
+        onStateChanged,
+        descInput: input,
+      });
+    });
   });
 
   // ===== Tooltip hover dla rabatu =====
@@ -847,6 +1324,16 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
       onStateChanged?.();
     });
   });
+
+  tbody.querySelectorAll("[data-item-search]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const i = parseInt(btn.getAttribute("data-item-search"), 10);
+      if (!Number.isFinite(i)) return;
+      openProductSearchModal(i, { onTotalsChanged, onStateChanged });
+    });
+  });
+
+  requestAnimationFrame(() => updateItemsSyncGutter());
 }
 
 export function recalcAllRowsUI() {
