@@ -579,6 +579,180 @@ td.profitCell .profitWrap{
   line-height:1.45;
   color:var(--muted);
 }
+.iaiOrderPreviewModal[hidden]{ display:none !important; }
+.iaiOrderPreviewModal{
+  position:fixed;
+  inset:0;
+  z-index:8200;
+}
+.iaiOrderPreviewModal__backdrop{
+  position:absolute;
+  inset:0;
+  background:rgba(0,0,0,.58);
+}
+.iaiOrderPreviewModal__dialog{
+  position:relative;
+  width:min(920px, calc(100vw - 32px));
+  margin:6vh auto 0;
+  padding:18px;
+  border-radius:18px;
+  border:1px solid rgba(255,255,255,.12);
+  background:linear-gradient(180deg, rgba(15,26,46,.985), rgba(11,18,32,.985));
+  box-shadow:0 24px 70px rgba(0,0,0,.46);
+}
+.iaiOrderPreviewModal__head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+}
+.iaiOrderPreviewModal__headActions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.iaiOrderPreviewModal__title{
+  font-size:18px;
+  font-weight:800;
+  line-height:1.15;
+  color:var(--text);
+}
+.iaiOrderPreviewModal__sub{
+  margin-top:8px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.45;
+}
+.iaiOrderPreviewModal__x{
+  appearance:none;
+  border:0;
+  background:transparent;
+  color:var(--muted);
+  width:32px;
+  height:32px;
+  border-radius:10px;
+  font-size:20px;
+  line-height:1;
+  cursor:pointer;
+}
+.iaiOrderPreviewModal__x:hover{
+  color:var(--text);
+  background:rgba(255,255,255,.06);
+  transform:none;
+}
+.iaiOrderPreviewModal__warning{
+  margin-top:14px;
+  padding:12px 14px;
+  border-radius:14px;
+  border:1px solid rgba(255,157,66,.24);
+  background:rgba(255,157,66,.08);
+  color:#ffd5a9;
+  font-size:12px;
+  line-height:1.5;
+}
+.iaiOrderPreviewModal__friendly{
+  margin-top:14px;
+}
+.iaiOrderPreviewModal__section + .iaiOrderPreviewModal__section{
+  margin-top:14px;
+}
+.iaiOrderPreviewModal__sectionTitle{
+  font-size:12px;
+  font-weight:700;
+  color:var(--muted);
+  margin-bottom:8px;
+}
+.iaiOrderPreviewModal__infoGrid{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:10px;
+}
+.iaiOrderPreviewModal__infoItem{
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.03);
+}
+.iaiOrderPreviewModal__infoItem span{
+  display:block;
+  font-size:11px;
+  color:var(--muted);
+  margin-bottom:4px;
+}
+.iaiOrderPreviewModal__infoItem strong{
+  display:block;
+  font-size:13px;
+  color:var(--text);
+  line-height:1.35;
+  word-break:break-word;
+}
+.iaiOrderPreviewModal__tableWrap{
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;
+  overflow:hidden;
+  background:rgba(255,255,255,.03);
+}
+.iaiOrderPreviewModal__table{
+  width:100%;
+  border-collapse:collapse;
+}
+.iaiOrderPreviewModal__table th,
+.iaiOrderPreviewModal__table td{
+  padding:10px 12px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  font-size:12px;
+}
+.iaiOrderPreviewModal__table th{
+  text-align:left;
+  color:var(--muted);
+  font-weight:700;
+  background:rgba(255,255,255,.03);
+}
+.iaiOrderPreviewModal__table tbody tr:last-child td{
+  border-bottom:0;
+}
+.iaiOrderPreviewModal__table .is-right{
+  text-align:right;
+}
+.iaiOrderPreviewModal__table .is-center{
+  text-align:center;
+}
+.iaiOrderPreviewModal__table .is-empty{
+  text-align:center;
+  color:var(--muted);
+}
+.iaiOrderPreviewModal__rawWrap{
+  margin-top:14px;
+}
+.iaiOrderPreviewModal__payloadLabel{
+  margin-top:14px;
+  font-size:12px;
+  font-weight:700;
+  color:var(--muted);
+}
+.iaiOrderPreviewModal__payload{
+  margin:8px 0 0;
+  max-height:48vh;
+  overflow:auto;
+  padding:14px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(6,10,18,.62);
+  color:#dfe7fb;
+  font:12px/1.5 Consolas, "SFMono-Regular", Monaco, monospace;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+.iaiOrderPreviewModal__actions{
+  margin-top:14px;
+  display:flex;
+  justify-content:flex-end;
+}
+@media (max-width: 760px){
+  .iaiOrderPreviewModal__infoGrid{
+    grid-template-columns:1fr;
+  }
+}
 .itemSearchResultCard{
     display:flex;
     align-items:flex-start;
@@ -611,6 +785,11 @@ td.profitCell .profitWrap{
     font-weight:700;
     color:#79D2FF;
     white-space:nowrap;
+  }
+.itemSearchResultPrice--subtle{
+    font-size:11px;
+    font-weight:600;
+    color:var(--muted);
   }
 .itemSearchResultSide{
     flex:0 0 auto;

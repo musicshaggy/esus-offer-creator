@@ -510,6 +510,14 @@ function getProductDisplayName(product, fallback = "") {
 function applyIdoSellProductToItem(itemIdx, product, { onTotalsChanged, onStateChanged, descInput } = {}) {
   if (!product || !Number.isFinite(itemIdx) || !store.items[itemIdx]) return false;
   const desc = getProductDisplayName(product, store.items[itemIdx]?.desc);
+  const rawBuyNet = product?.buyNet;
+  const hasBuyNet =
+    rawBuyNet !== null &&
+    rawBuyNet !== undefined &&
+    String(rawBuyNet).trim() !== "" &&
+    Number.isFinite(Number(rawBuyNet));
+  const buyNet = hasBuyNet ? roundMoney(Number(rawBuyNet)) : null;
+  const buyCcy = String(product?.currency || store.items[itemIdx]?.buyCcy || "PLN").toUpperCase();
 
   if (descInput) {
     descInput.value = desc;
@@ -518,6 +526,7 @@ function applyIdoSellProductToItem(itemIdx, product, { onTotalsChanged, onStateC
   updateItem(itemIdx, {
     desc,
     net: productGrossToNet(product?.priceGross),
+    ...(buyNet !== null ? { buyNet, buyCcy } : {}),
     iaiSync: {
       provider: "idosell",
       synced: true,
@@ -528,6 +537,7 @@ function applyIdoSellProductToItem(itemIdx, product, { onTotalsChanged, onStateC
       producerCode: String(product?.producerCode || "").trim(),
       producer: String(product?.producer || "").trim(),
       priceGross: Number(product?.priceGross || 0),
+      buyNet,
       currency: String(product?.currency || offerCcy()).toUpperCase(),
     },
   });
@@ -722,6 +732,12 @@ function ensureProductSearchModal() {
       const price = Number.isFinite(product?.priceGross)
         ? `${money(product.priceGross, product.currency || "PLN")} brutto`
         : "";
+      const buyNet = Number.isFinite(Number(product?.buyNet)) &&
+        product?.buyNet !== null &&
+        product?.buyNet !== undefined &&
+        String(product.buyNet).trim() !== ""
+        ? `${money(product.buyNet, product.currency || "PLN")} netto zakupu`
+        : "";
 
       return `
         <div class="itemSearchResultCard">
@@ -731,6 +747,7 @@ function ensureProductSearchModal() {
           </div>
           <div class="itemSearchResultSide">
             ${price ? `<div class="itemSearchResultPrice">${escapeHtml(price)}</div>` : ""}
+            ${buyNet ? `<div class="itemSearchResultPrice itemSearchResultPrice--subtle">${escapeHtml(buyNet)}</div>` : ""}
             <button
               type="button"
               class="btnTiny itemSearchResultPick"

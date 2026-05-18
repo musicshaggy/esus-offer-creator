@@ -11,6 +11,7 @@ let splashWin = null;
 let win = null;
 const idosellOpenApiCache = new Map();
 const idosellProductSearchCache = new Map();
+const IDOSELL_PRODUCT_SEARCH_CACHE_VERSION = "v3";
 
 function closeSplash() {
   if (splashWin && !splashWin.isDestroyed()) {
@@ -1346,6 +1347,7 @@ function toFiniteNumber(value) {
   const normalized = String(value ?? "")
     .replace(/\s+/g, "")
     .replace(",", ".");
+  if (!normalized) return null;
   const num = Number(normalized);
   return Number.isFinite(num) ? num : null;
 }
@@ -1367,6 +1369,15 @@ function mapIdoSellProductCandidate(candidate) {
   const preferredSize =
     sizeAttributes.find((entry) => String(entry?.productSizeCodeExternal || "").trim()) ||
     sizeAttributes[0] ||
+    null;
+  const shopAttributes = Array.isArray(candidate?.productShopsAttributes)
+    ? candidate.productShopsAttributes
+    : [];
+  const topLevelCurrency = String(candidate?.currencyId || candidate?.currency || "PLN").trim().toUpperCase();
+  const preferredShopAttributes =
+    shopAttributes.find((entry) => Number(entry?.shopId) === 1) ||
+    shopAttributes.find((entry) => String(entry?.currencyId || "").trim().toUpperCase() === topLevelCurrency) ||
+    shopAttributes[0] ||
     null;
 
   const id = String(
@@ -1432,6 +1443,11 @@ function mapIdoSellProductCandidate(candidate) {
 
   const priceGross =
     toFiniteNumber(
+      preferredShopAttributes?.productRetailPrice ??
+      preferredShopAttributes?.priceGross ??
+      preferredShopAttributes?.grossPrice
+    ) ??
+    toFiniteNumber(
       pickFirstValue(candidate, [
         "productRetailPrice",
         "productPrice",
@@ -1444,7 +1460,84 @@ function mapIdoSellProductCandidate(candidate) {
     toFiniteNumber(candidate?.productPrices?.priceRetailGross) ??
     toFiniteNumber(candidate?.productPriceData?.priceGross);
 
+  const buyMinimalGross =
+    toFiniteNumber(
+      preferredShopAttributes?.productMinimalPrice ??
+      preferredShopAttributes?.minimalPrice ??
+      preferredShopAttributes?.minimumPrice
+    ) ??
+    toFiniteNumber(
+      preferredSize?.productMinimalPrice ??
+      preferredSize?.minimalPrice ??
+      preferredSize?.minimumPrice
+    ) ??
+    toFiniteNumber(
+      pickFirstValue(candidate, [
+        "productMinimalPrice",
+        "minimalPrice",
+        "minimumPrice",
+      ])
+    ) ??
+    toFiniteNumber(candidate?.productPrices?.priceMinimalGross) ??
+    toFiniteNumber(candidate?.productPriceData?.priceMinimalGross);
+
+  const vatPercent =
+    toFiniteNumber(
+      preferredShopAttributes?.productVat ??
+      preferredShopAttributes?.vat ??
+      preferredShopAttributes?.vatRate
+    ) ??
+    toFiniteNumber(
+      pickFirstValue(candidate, [
+        "productVat",
+        "vat",
+        "vatRate",
+      ])
+    ) ??
+    23;
+  const vatMultiplier = vatPercent > 0 ? 1 + vatPercent / 100 : 1;
+
+  const buyNet =
+    toFiniteNumber(
+      preferredShopAttributes?.productMinimalNetPrice ??
+      preferredShopAttributes?.minimalNetPrice ??
+      preferredShopAttributes?.minimumNetPrice ??
+      preferredShopAttributes?.priceNetMinimal ??
+      preferredShopAttributes?.purchasePriceNet ??
+      preferredShopAttributes?.productPurchasePriceNet ??
+      preferredShopAttributes?.wholesalePriceNet
+    ) ??
+    toFiniteNumber(
+      preferredSize?.productMinimalNetPrice ??
+      preferredSize?.minimalNetPrice ??
+      preferredSize?.minimumNetPrice ??
+      preferredSize?.priceNetMinimal ??
+      preferredSize?.purchasePriceNet ??
+      preferredSize?.productPurchasePriceNet ??
+      preferredSize?.wholesalePriceNet
+    ) ??
+    toFiniteNumber(
+      pickFirstValue(candidate, [
+        "productMinimalNetPrice",
+        "minimalNetPrice",
+        "minimumNetPrice",
+        "priceNetMinimal",
+        "purchasePriceNet",
+        "productPurchasePriceNet",
+        "wholesalePriceNet",
+      ])
+    ) ??
+    toFiniteNumber(candidate?.productPrices?.priceMinimalNet) ??
+    toFiniteNumber(candidate?.productPrices?.priceWholesaleNet) ??
+    toFiniteNumber(candidate?.productPriceData?.priceMinimalNet) ??
+    toFiniteNumber(candidate?.productPriceData?.priceWholesaleNet) ??
+    toFiniteNumber(candidate?.productPriceData?.minimalPriceNet) ??
+    (Number.isFinite(buyMinimalGross)
+      ? Math.round(((buyMinimalGross / vatMultiplier) + Number.EPSILON) * 100) / 100
+      : null);
+
   const currency = String(
+    preferredShopAttributes?.currencyId ||
     pickFirstValue(candidate, [
       "currency",
       "priceCurrency",
@@ -1462,6 +1555,7 @@ function mapIdoSellProductCandidate(candidate) {
     producerCode,
     producer,
     priceGross,
+    buyNet,
     currency,
   };
 }
@@ -1535,7 +1629,7 @@ async function searchIdoSellProducts(query) {
   }
 
   const normalizedIndex = q.replace(/\s+/g, "").trim();
-  const cacheKey = normalizeSearchText(normalizedIndex);
+  const cacheKey = `${IDOSELL_PRODUCT_SEARCH_CACHE_VERSION}:${normalizeSearchText(normalizedIndex)}`;
   const cached = idosellProductSearchCache.get(cacheKey);
   if (cached && Date.now() - cached.at < 5 * 60 * 1000) {
     return { ok: true, products: cached.products, cached: true };
