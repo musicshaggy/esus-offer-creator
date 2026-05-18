@@ -21,7 +21,8 @@ export const store = {
     ccy: "PLN",   // PLN | EUR | USD
     lang: "pl",   // pl | en | de | hu
     vatCode: "23", // "23" | "19" | "27" | "0_wdt" | "0_ex"
-    lastItemsEditedAt: ""
+    lastItemsEditedAt: "",
+    iaiSyncReviewRequested: false,
   },
   
   // ✅ Kursy walut do przeliczeń (NBP, relacja do PLN)

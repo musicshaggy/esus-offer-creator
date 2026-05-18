@@ -1,7 +1,7 @@
-import { el, q } from "./ui/dom.js";
+﻿import { el, q } from "./ui/dom.js";
 import { todayYMD, escapeHtml, money } from "./utils/format.js";
 
-import { store, setItems, getItems, addItem } from "./state/store.js";
+import { store, setItems, getItems, addItem, setOffer } from "./state/store.js";
 import { recalcTotalsUI, getTotalsUI } from "./ui/totalsPanel.js";
 
 import { initWindowControls } from "./ui/windowControls.js";
@@ -37,13 +37,13 @@ import {
   setActiveOffer,
   getActiveOffer,
   flushAutosave,
-  commitAndSaveNow, // ✅ DODANE
+  commitAndSaveNow, // âś… DODANE
 } from "./offers/offersController.js";
 
-// 1) sync: z localStorage (żeby EUR/USD działało od razu po otwarciu oferty)
+// 1) sync: z localStorage (ĹĽeby EUR/USD dziaĹ‚aĹ‚o od razu po otwarciu oferty)
 setExchange(loadCachedExchangeRates());
 
-// 2) async: odśwież z NBP i po tym przelicz UI
+// 2) async: odĹ›wieĹĽ z NBP i po tym przelicz UI
 fetchExchangeRates().then((ex) => {
   setExchange(ex);
 
@@ -55,6 +55,12 @@ fetchExchangeRates().then((ex) => {
 
 let cameFromMainPage = false;
 let currentOfferId = null; // ID aktualnie otwartej oferty w formularzu
+let iaiOrderPreviewModal = null;
+let iaiOrderPreviewPayloadEl = null;
+let iaiOrderPreviewFriendlyEl = null;
+let iaiOrderPreviewRawWrapEl = null;
+let iaiOrderPreviewRawToggleEl = null;
+const IAI_ORDER_ACTION_ENABLED = false;
 
 function formatOfferVersionDateTime(value) {
   if (!value) return "Brak zmian w pozycjach";
@@ -152,7 +158,7 @@ function initOfferSettingsUI() {
   let vatManuallyChanged = false;
   let ccyManuallyChanged = false;
 
-  // ✅ tylko zmiany użytkownika blokują automat
+  // âś… tylko zmiany uĹĽytkownika blokujÄ… automat
   vat.addEventListener("change", (e) => {
     if (e?.isTrusted) vatManuallyChanged = true;
   });
@@ -169,7 +175,7 @@ function initOfferSettingsUI() {
       const nextVat = defaultVatByLang[langCode] || "23";
       if (String(vat.value || "") !== String(nextVat)) {
         vat.value = nextVat;
-        // odpali Twoje istniejące przeliczenia (offerVat change listener)
+        // odpali Twoje istniejÄ…ce przeliczenia (offerVat change listener)
         vat.dispatchEvent(new Event("change", { bubbles: true }));
       }
     }
@@ -179,13 +185,13 @@ function initOfferSettingsUI() {
       const nextCcy = defaultCcyByLang[langCode] || null;
       if (nextCcy && String(ccy.value || "").toUpperCase() !== nextCcy) {
         ccy.value = nextCcy;
-        // odpali Twoją istniejącą logikę przeliczania (offerCurrency change listener)
+        // odpali TwojÄ… istniejÄ…cÄ… logikÄ™ przeliczania (offerCurrency change listener)
         ccy.dispatchEvent(new Event("change", { bubbles: true }));
       }
     }
   });
 
-  // init VAT (jak było)
+  // init VAT (jak byĹ‚o)
   const initialVat = defaultVatByLang[String(lang.value || "pl")] || "23";
   vat.value = vat.value || initialVat;
 }
@@ -201,6 +207,20 @@ function normalizeItem(it = {}) {
   const lifetime = !!w.lifetime;
   const months = lifetime ? 0 : Math.max(0, parseInt(w.months ?? 0, 10) || 0);
   const nbd = !!w.nbd;
+  const iaiSync = it?.iaiSync && typeof it.iaiSync === "object"
+    ? {
+        provider: String(it.iaiSync.provider || "idosell"),
+        synced: it.iaiSync.synced === true,
+        syncedAt: String(it.iaiSync.syncedAt || ""),
+        productId: String(it.iaiSync.productId || ""),
+        productCode: String(it.iaiSync.productCode || ""),
+        productName: String(it.iaiSync.productName || ""),
+        producerCode: String(it.iaiSync.producerCode || ""),
+        producer: String(it.iaiSync.producer || ""),
+        priceGross: Number(it.iaiSync.priceGross || 0),
+        currency: String(it.iaiSync.currency || "PLN").toUpperCase(),
+      }
+    : null;
 
   return {
     desc: it.desc ?? "",
@@ -211,6 +231,7 @@ function normalizeItem(it = {}) {
     qty: Math.max(1, parseInt(it.qty ?? 1, 10) || 1),
     warranty: { months, nbd, lifetime },
     internalNote: String(it.internalNote ?? ""),
+    iaiSync,
   };
 }
 
@@ -271,6 +292,270 @@ function wirePdfButton() {
   });
 }
 
+function mapIaiOrderPaymentType() {
+  const paymentMethod = String(el("paymentMethod")?.value || "prepay").trim().toLowerCase();
+  if (paymentMethod === "invoice") return "tradecredit";
+  return "prepaid";
+}
+
+function buildIaiOrderPreviewPayload() {
+  const currencyId = String(el("offerCurrency")?.value || store.offer?.ccy || "PLN").toUpperCase();
+  const purchaseDate = String(el("offerDate")?.value || "").trim() || todayYMD();
+  const paymentMethod = String(el("paymentMethod")?.value || "prepay").trim().toLowerCase();
+  const invoiceDays = String(el("invoiceDays")?.value || "").trim();
+  const shippingNet = Number(el("shippingNet")?.value || 0) || 0;
+  const estimateDays = String(el("estimateDays")?.value || "").trim();
+  const offerNumber = String(el("offerNumberPreview")?.textContent || "").trim();
+  const termsExtra = String(el("termsExtra")?.value || "").trim();
+
+  const client = {
+    name: String(el("custName")?.value || "").trim(),
+    nip: String(el("custNip")?.value || "").trim(),
+    addr: String(el("custAddr")?.value || "").trim(),
+    contact: String(el("custContact")?.value || "").trim(),
+  };
+
+  const products = store.items.map((item, index) => {
+    const sync = item?.iaiSync || {};
+    return {
+      lp: index + 1,
+      productId: sync.productId ? Number(sync.productId) : null,
+      productIndex: String(sync.productCode || "").trim() || null,
+      description: String(item?.desc || "").trim(),
+      quantity: Math.max(1, parseInt(item?.qty || 1, 10) || 1),
+      priceNet: Number(item?.net || 0) || 0,
+      rebatePercent: Number(item?.discount || 0) || 0,
+      synced: !!sync.synced,
+      currencyId,
+    };
+  });
+
+  const payload = {
+    params: {
+      orders: [
+        {
+          orderType: "retail",
+          shopId: 1,
+          stockId: 1,
+          orderPaymentType: mapIaiOrderPaymentType(),
+          currencyId,
+          clientWithoutAccount: "n",
+          clientSummary: client,
+          deliveryCost: shippingNet,
+          products,
+          offerSummary: {
+            offerNumber,
+            estimateDays: estimateDays || null,
+            paymentMethod,
+            invoiceDays: paymentMethod === "invoice" ? (invoiceDays || null) : null,
+            termsExtra: termsExtra || null,
+          },
+        },
+      ],
+    },
+    settings: {
+      orderSettledAtPrice: "net",
+      billingCurrency: currencyId,
+      purchaseDate,
+    },
+  };
+
+  return payload;
+}
+
+function formatIaiPreviewMoney(value, currency) {
+  return money(Number(value || 0), String(currency || "PLN").toUpperCase());
+}
+
+function buildIaiOrderFriendlyMarkup(payload) {
+  const order = payload?.params?.orders?.[0] || {};
+  const client = order?.clientSummary || {};
+  const products = Array.isArray(order?.products) ? order.products : [];
+  const currency = order?.currencyId || payload?.settings?.billingCurrency || "PLN";
+
+  const clientRows = [
+    ["Nazwa", client?.name || "\u2014"],
+    ["NIP", client?.nip || "\u2014"],
+    ["Adres", client?.addr || "\u2014"],
+    ["Kontakt", client?.contact || "\u2014"],
+    ["P\u0142atno\u015b\u0107", order?.orderPaymentType || "\u2014"],
+    ["Sklep / stock", `${order?.shopId ?? "\u2014"} / ${order?.stockId ?? "\u2014"}`],
+  ];
+
+  const clientMarkup = clientRows.map(([label, value]) => `
+    <div class="iaiOrderPreviewModal__infoItem">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(String(value || "\u2014"))}</strong>
+    </div>
+  `).join("");
+
+  const productRows = products.length
+    ? products.map((product) => {
+        const idLabel = product?.productId ?? product?.productIndex ?? "\u2014";
+        return `
+          <tr>
+            <td>${escapeHtml(String(idLabel))}</td>
+            <td>${escapeHtml(String(product?.description || "\u2014"))}</td>
+            <td class="is-right">${escapeHtml(formatIaiPreviewMoney(product?.priceNet, currency))}</td>
+            <td class="is-center">${escapeHtml(String(product?.quantity ?? 1))}</td>
+          </tr>
+        `;
+      }).join("")
+    : `<tr><td colspan="4" class="is-empty">Brak pozycji do wys\u0142ania.</td></tr>`;
+
+  return `
+    <div class="iaiOrderPreviewModal__section">
+      <div class="iaiOrderPreviewModal__sectionTitle">Dane klienta przekazywane do IAI</div>
+      <div class="iaiOrderPreviewModal__infoGrid">${clientMarkup}</div>
+    </div>
+    <div class="iaiOrderPreviewModal__section">
+      <div class="iaiOrderPreviewModal__sectionTitle">Pozycje zam\u00f3wienia</div>
+      <div class="iaiOrderPreviewModal__tableWrap">
+        <table class="iaiOrderPreviewModal__table">
+          <thead>
+            <tr>
+              <th>ID IdoSell</th>
+              <th>Nazwa pozycji</th>
+              <th class="is-right">Cena netto</th>
+              <th class="is-center">Ilo\u015b\u0107</th>
+            </tr>
+          </thead>
+          <tbody>${productRows}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function closeIaiOrderPreviewModal() {
+  if (iaiOrderPreviewModal) iaiOrderPreviewModal.hidden = true;
+}
+
+function applyIaiOrderActionAvailability() {
+  const btn = el("btnConvertToIaiOrder");
+  if (!btn) return;
+
+  if (IAI_ORDER_ACTION_ENABLED) {
+    btn.disabled = false;
+    btn.removeAttribute("aria-disabled");
+    btn.title = "Sprawdź synchronizację pozycji z IAI";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.setAttribute("aria-disabled", "true");
+  btn.title = "Ta funkcja jest tymczasowo wyłączona w tym wydaniu.";
+}
+
+
+function ensureIaiOrderPreviewModal() {
+  if (iaiOrderPreviewModal) return iaiOrderPreviewModal;
+
+  const modal = document.createElement("div");
+  modal.className = "iaiOrderPreviewModal";
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="iaiOrderPreviewModal__backdrop" data-iai-preview-close="1"></div>
+    <div class="iaiOrderPreviewModal__dialog" role="dialog" aria-modal="true" aria-labelledby="iaiOrderPreviewTitle">
+      <div class="iaiOrderPreviewModal__head">
+        <div>
+          <div class="iaiOrderPreviewModal__title" id="iaiOrderPreviewTitle">Podgl\u0105d konwersji do zam\u00f3wienia IAI</div>
+          <div class="iaiOrderPreviewModal__sub">To jest tylko podgl\u0105d payloadu. W tej iteracji aplikacja nie wysy\u0142a jeszcze nic do IdoSell.</div>
+        </div>
+        <div class="iaiOrderPreviewModal__headActions">
+          <button type="button" class="secondary iaiOrderPreviewModal__rawToggle" id="btnIaiPreviewRawToggle">RAW payload</button>
+          <button type="button" class="iaiOrderPreviewModal__x" aria-label="Zamknij" data-iai-preview-close="1">\u00d7</button>
+        </div>
+      </div>
+      <div class="iaiOrderPreviewModal__warning">
+        Ta funkcja jest w wersji wst\u0119pnej i mo\u017ce zawiera\u0107 b\u0142\u0119dy. Po docelowym wdro\u017ceniu wysy\u0142ki zam\u00f3wienie nadal trzeba b\u0119dzie r\u0119cznie potwierdzi\u0107 w IdoSell.
+      </div>
+      <div class="iaiOrderPreviewModal__friendly" id="iaiOrderPreviewFriendly"></div>
+      <div class="iaiOrderPreviewModal__rawWrap" id="iaiOrderPreviewRawWrap" hidden>
+        <div class="iaiOrderPreviewModal__payloadLabel">RAW payload</div>
+        <pre class="iaiOrderPreviewModal__payload" id="iaiOrderPreviewPayload"></pre>
+      </div>
+      <div class="iaiOrderPreviewModal__actions">
+        <button type="button" class="secondary" data-iai-preview-close="1">Zamknij</button>
+      </div>
+    </div>
+  `;
+
+  modal.addEventListener("click", (event) => {
+    if (event.target.closest("[data-iai-preview-close='1']")) {
+      closeIaiOrderPreviewModal();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && iaiOrderPreviewModal && !iaiOrderPreviewModal.hidden) {
+      closeIaiOrderPreviewModal();
+    }
+  });
+
+  document.body.appendChild(modal);
+  iaiOrderPreviewModal = modal;
+  iaiOrderPreviewPayloadEl = modal.querySelector("#iaiOrderPreviewPayload");
+  iaiOrderPreviewFriendlyEl = modal.querySelector("#iaiOrderPreviewFriendly");
+  iaiOrderPreviewRawWrapEl = modal.querySelector("#iaiOrderPreviewRawWrap");
+  iaiOrderPreviewRawToggleEl = modal.querySelector("#btnIaiPreviewRawToggle");
+  iaiOrderPreviewRawToggleEl?.addEventListener("click", () => {
+    if (!iaiOrderPreviewRawWrapEl) return;
+    const nextHidden = !iaiOrderPreviewRawWrapEl.hidden;
+    iaiOrderPreviewRawWrapEl.hidden = nextHidden;
+    iaiOrderPreviewRawToggleEl.textContent = nextHidden ? "RAW payload" : "Ukryj RAW";
+  });
+
+  return modal;
+}
+
+function openIaiOrderPreviewModal(payload) {
+  const modal = ensureIaiOrderPreviewModal();
+  if (iaiOrderPreviewFriendlyEl) {
+    iaiOrderPreviewFriendlyEl.innerHTML = buildIaiOrderFriendlyMarkup(payload);
+  }
+  if (iaiOrderPreviewPayloadEl) {
+    iaiOrderPreviewPayloadEl.textContent = JSON.stringify(payload, null, 2);
+  }
+  if (iaiOrderPreviewRawWrapEl) iaiOrderPreviewRawWrapEl.hidden = true;
+  if (iaiOrderPreviewRawToggleEl) iaiOrderPreviewRawToggleEl.textContent = "RAW payload";
+  modal.hidden = false;
+}
+
+function wireIaiConvertReviewButton() {
+  el("btnConvertToIaiOrder")?.addEventListener("click", () => {
+    if (!IAI_ORDER_ACTION_ENABLED) {
+      showToast("Wysyłka i konwersja do IAI są tymczasowo wyłączone w tym wydaniu.", {
+        type: "info",
+        ms: 3200,
+      });
+      return;
+    }
+
+    if (!store.items.length) {
+      showToast("Brak pozycji do sprawdzenia.", { type: "info", ms: 2400 });
+      return;
+    }
+
+    setOffer({ iaiSyncReviewRequested: true });
+
+    renderItems({
+      onTotalsChanged: recalcTotalsUI,
+      onStateChanged: () => scheduleAutosave(autosaveActiveOffer),
+    });
+
+    const missingCount = store.items.filter((item) => !(item?.iaiSync && item.iaiSync.synced)).length;
+    if (missingCount > 0) {
+      showToast(`Do synchronizacji z IAI pozosta\u0142o ${missingCount} ${missingCount === 1 ? "pozycja" : missingCount < 5 ? "pozycje" : "pozycji"}.`, {
+        type: "info",
+        ms: 3200,
+      });
+    } else {
+      openIaiOrderPreviewModal(buildIaiOrderPreviewPayload());
+    }
+  });
+}
+
 function buildItemsClipboardPayload() {
   const currency = String(store.offer?.ccy || store.settings?.offerCcy || "PLN").toUpperCase();
   const rows = store.items.map((it) => {
@@ -297,7 +582,7 @@ function buildItemsClipboardPayload() {
   <thead>
     <tr>
       <th style="padding:8px 10px;border:1px solid #cfd6e4;background:#f4f7fb;text-align:left;">Nazwa</th>
-      <th style="padding:8px 10px;border:1px solid #cfd6e4;background:#f4f7fb;text-align:center;">Ilość</th>
+      <th style="padding:8px 10px;border:1px solid #cfd6e4;background:#f4f7fb;text-align:center;">IloĹ›Ä‡</th>
       <th style="padding:8px 10px;border:1px solid #cfd6e4;background:#f4f7fb;text-align:right;">Kwota netto</th>
     </tr>
   </thead>
@@ -310,7 +595,7 @@ function buildItemsClipboardPayload() {
 </table>`.trim();
 
   const text = [
-    "Nazwa\tIlość\tKwota netto",
+    "Nazwa\tIloĹ›Ä‡\tKwota netto",
     ...rows.map((row) => `${row.desc}\t${row.qty}\t${money(row.lineNet, currency)}`),
     `Suma netto\t\t${money(sumNet, currency)}`,
   ].join("\n");
@@ -343,7 +628,7 @@ function wireCopyItemsHtmlButton() {
       showToast("Skopiowano HTML tabeli pozycji do schowka.", { type: "info", ms: 2600 });
     } catch (err) {
       console.warn("Copy items HTML failed:", err);
-      showToast("Nie udało się skopiować tabeli do schowka.", { type: "error", ms: 3200 });
+      showToast("Nie udaĹ‚o siÄ™ skopiowaÄ‡ tabeli do schowka.", { type: "error", ms: 3200 });
     }
   });
 }
@@ -567,6 +852,8 @@ async function init() {
   wireAddItemButtons();
   wireCopyItemsHtmlButton();
   wirePdfButton();
+  applyIaiOrderActionAvailability();
+  wireIaiConvertReviewButton();
   initClientSuggestions({
     onStateChanged: () => scheduleAutosave(autosaveActiveOffer),
   });
@@ -595,7 +882,7 @@ async function init() {
     const payload = await bootLastOrCreateNew(deps);
     setActiveOffer(payload);
     renderOfferVersionInfo(payload);
-    if (el("offerNumberPreview")) el("offerNumberPreview").textContent = payload?.meta?.offerNo || "—";
+    if (el("offerNumberPreview")) el("offerNumberPreview").textContent = payload?.meta?.offerNo || "â€”";
 
     const offersCtl = initOffersSubpage({
       onBack: () => showPage("mainPage"),
@@ -606,15 +893,15 @@ async function init() {
 
         currentOfferId = p?.id || null;
         if (el("offerNumberPreview")) {
-          el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
+          el("offerNumberPreview").textContent = p?.meta?.offerNo || "â€”";
         }
         renderOfferVersionInfo(p);
 
         showPage("mainPage");
 
         queueMicrotask(() => {
-		  clearFormFieldsForNewOffer();   // 🔥 zamiast clearCustomerFields
-		  setValidUntilToday();           // 🔥 ustaw datę
+		  clearFormFieldsForNewOffer();   // đź”Ą zamiast clearCustomerFields
+		  setValidUntilToday();           // đź”Ą ustaw datÄ™
 		  scheduleAutosave(autosaveActiveOffer);
         });
       },
@@ -624,7 +911,7 @@ async function init() {
 
         currentOfferId = p?.id || null;
         if (el("offerNumberPreview")) {
-          el("offerNumberPreview").textContent = p?.meta?.offerNo || p?.offerNo || "—";
+          el("offerNumberPreview").textContent = p?.meta?.offerNo || p?.offerNo || "â€”";
         }
         renderOfferVersionInfo(p);
 
@@ -685,7 +972,7 @@ async function init() {
           const profile = await ensureUserProfile();
           applyProfileToCurrentForm(profile, { force: true });
           scheduleAutosave(autosaveActiveOffer);
-          showToast("Wyczyszczono dane aplikacji i ustawiono nowy profil użytkownika.", {
+          showToast("Wyczyszczono dane aplikacji i ustawiono nowy profil uĹĽytkownika.", {
             type: "info",
             ms: 3200,
           });
@@ -699,17 +986,17 @@ async function init() {
         cameFromMainPage = false;
         showPage("offersPage");
         await offersCtl.refresh();
-        showToast("Usunięto wszystkie zapisane oferty.", { type: "info", ms: 2800 });
+        showToast("UsuniÄ™to wszystkie zapisane oferty.", { type: "info", ms: 2800 });
       },
     });
 
     el("btnOffers")?.addEventListener("click", async () => {
-      // ✅ ENTERPRISE: pewny zapis ostatniej zmiany (bug "pierwsza zmiana po starcie")
+      // âś… ENTERPRISE: pewny zapis ostatniej zmiany (bug "pierwsza zmiana po starcie")
       try {
         await commitAndSaveNow({ getItems, getTotals: getTotalsUI });
       } catch (e) {
         console.warn("commitAndSaveNow failed:", e);
-        // fallback: chociaż flush
+        // fallback: chociaĹĽ flush
         try {
           const ae = document.activeElement;
           if (ae && typeof ae.blur === "function") ae.blur();
@@ -731,15 +1018,15 @@ async function init() {
 
       currentOfferId = p?.id || null;
       if (el("offerNumberPreview")) {
-        el("offerNumberPreview").textContent = p?.meta?.offerNo || "—";
+        el("offerNumberPreview").textContent = p?.meta?.offerNo || "â€”";
       }
       renderOfferVersionInfo(p);
 
       showPage("mainPage");
 
       queueMicrotask(() => {
-		  clearFormFieldsForNewOffer();   // 🔥 zamiast clearCustomerFields
-		  setValidUntilToday();           // 🔥 ustaw datę
+		  clearFormFieldsForNewOffer();   // đź”Ą zamiast clearCustomerFields
+		  setValidUntilToday();           // đź”Ą ustaw datÄ™
 		  scheduleAutosave(autosaveActiveOffer);
       });
     });
@@ -780,24 +1067,24 @@ function initUpdateToasts() {
   window.esusAPI.onUpdateAvailable((d) => {
     if (downloading) return;
     const v = d?.version ? ` v${d.version}` : "";
-    showToastAction(`Dostępna aktualizacja${v}.`, {
+    showToastAction(`DostÄ™pna aktualizacja${v}.`, {
       type: "info",
       ms: 15000,
       actionLabel: "Pobierz",
-      secondaryLabel: "Później",
+      secondaryLabel: "PĂłĹşniej",
       onSecondary: async () => {},
       keepOpenOnAction: true,
       onAction: async () => {
         try {
           downloading = true;
           lastPct = -1;
-          showToastProgress("Pobieranie aktualizacji…");
+          showToastProgress("Pobieranie aktualizacjiâ€¦");
           await window.esusAPI.updateDownload();
         } catch (e) {
           downloading = false;
           endToastProgress();
           console.warn(e);
-          showToast("Nie udało się pobrać aktualizacji.", { type: "error", ms: 4500 });
+          showToast("Nie udaĹ‚o siÄ™ pobraÄ‡ aktualizacji.", { type: "error", ms: 4500 });
         }
       },
     });
@@ -822,7 +1109,7 @@ function initUpdateToasts() {
       type: "info",
       ms: 0,
       actionLabel: "Uruchom ponownie",
-      secondaryLabel: "Później",
+      secondaryLabel: "PĂłĹşniej",
       onSecondary: async () => {},
       onAction: async () => {
         await window.esusAPI.updateQuitAndInstall();
@@ -834,7 +1121,7 @@ function initUpdateToasts() {
     downloading = false;
     endToastProgress();
     console.warn("Updater error:", d);
-    showToast("Błąd aktualizacji (szczegóły w konsoli).", { type: "error", ms: 5000 });
+    showToast("BĹ‚Ä…d aktualizacji (szczegĂłĹ‚y w konsoli).", { type: "error", ms: 5000 });
   });
 
   window.esusAPI.updateGetStatus?.()
@@ -845,7 +1132,7 @@ function initUpdateToasts() {
           type: "info",
           ms: 0,
           actionLabel: "Uruchom ponownie",
-          secondaryLabel: "Później",
+          secondaryLabel: "PĂłĹşniej",
           onSecondary: async () => {},
           onAction: async () => window.esusAPI.updateQuitAndInstall(),
         });
@@ -869,7 +1156,7 @@ window.addEventListener("esus:offerDeleted", (ev) => {
 
 initUpdateToasts();
 
-// ===== Currency dropdown (PLN/USD/EUR) – UI only =====
+// ===== Currency dropdown (PLN/USD/EUR) â€“ UI only =====
 (function initCurrencyDropdown() {
   let activePortal = null;
 

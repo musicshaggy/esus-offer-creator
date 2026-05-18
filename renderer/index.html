@@ -327,21 +327,23 @@
       </div>
     </div>
 
-    <div class="tableWrap">
-      <table>
-        <thead>
-          <tr>
-            <th style="width:45%;">Opis</th>
-			<th style="width:14%;">Cena zakupu netto</th>
-            <th style="width:14%;">Cena netto</th>
-            <th style="width:10%;">Rabat %</th>
-            <th style="width:10%;">Ilość</th>
-            <th class="td-actions"></th>
-			<th style="width:10%;">Profit</th>
-          </tr>
-        </thead>
-        <tbody id="itemsBody"></tbody>
-      </table>
+    <div class="itemsTableArea">
+      <div class="tableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:45%;">Opis</th>
+			  <th style="width:14%;">Cena zakupu netto</th>
+              <th style="width:14%;">Cena netto</th>
+              <th style="width:10%;">Rabat %</th>
+              <th style="width:10%;">Ilość</th>
+              <th class="td-actions"></th>
+			  <th style="width:10%;">Profit</th>
+            </tr>
+          </thead>
+          <tbody id="itemsBody"></tbody>
+        </table>
+      </div>
     </div>
 
     <div class="hint">
@@ -370,7 +372,7 @@
 		</div>
 
 		<div class="sectionHeaderActions">
-		  <button class="secondary" id="btnConvertToIaiOrder" disabled title="Integracja pojawi się w kolejnym etapie">
+		  <button class="secondary" id="btnConvertToIaiOrder" title="Ta funkcja jest tymczasowo wyłączona w tym wydaniu." disabled aria-disabled="true">
 		    <i class="fa-solid fa-cart-shopping"></i>
 			Konwertuj na zamówienie w IAI
 		  </button>
