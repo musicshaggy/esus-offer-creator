@@ -31,7 +31,8 @@ contextBridge.exposeInMainWorld("esusAPI", {
   clientGetByNip: (nip) => ipcRenderer.invoke("clients:getByNip", nip),
   clientLookupByNip: (nip) => ipcRenderer.invoke("clients:lookupByNip", nip),
   clientDeleteByNip: (nip) => ipcRenderer.invoke("clients:deleteByNip", nip),
-  idosellSearchProducts: (query) => ipcRenderer.invoke("idosell:searchProducts", query),
+  idosellSearchProducts: (query, preferredCurrency) =>
+    ipcRenderer.invoke("idosell:searchProducts", { query, preferredCurrency }),
 
   // Optional: file operations already implemented in main.js
   fileSaveJson: (args) => ipcRenderer.invoke("file:saveJson", args),

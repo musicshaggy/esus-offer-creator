@@ -3,6 +3,7 @@ import { VAT_RATE } from "../config/constants.js";
 import { itemNetAfterDiscount } from "../calc/pricing.js";
 import { showToast, showToastAction } from "../ui/toast.js";
 import { getExchange } from "../state/store.js";
+import { initPmReportPanel } from "./pmReport.js";
 
 function pickOfferNo(row) {
   return (
@@ -89,6 +90,43 @@ function dateScore(value) {
 
 function pickOfferCcy(row) {
   return String(row?.offerCcy || row?.meta?.offerCcy || "PLN").toUpperCase();
+}
+
+function pickOfferStatus(row) {
+  return String(
+    row?.fields?.offerStatus ||
+    row?.meta?.offerStatus ||
+    row?.offerStatus ||
+    "nowa"
+  ).trim().toLowerCase();
+}
+
+function offerStatusLabel(status) {
+  switch (String(status || "").toLowerCase()) {
+    case "zainteresowanie":
+      return "Zainteresowanie";
+    case "realizacja":
+      return "Realizacja";
+    case "zrealizowana":
+      return "Zrealizowana";
+    case "nowa":
+    default:
+      return "Nowa";
+  }
+}
+
+function offerStatusIcon(status) {
+  switch (String(status || "").toLowerCase()) {
+    case "zainteresowanie":
+      return "fa-regular fa-eye";
+    case "realizacja":
+      return "fa-solid fa-gears";
+    case "zrealizowana":
+      return "fa-solid fa-circle-check";
+    case "nowa":
+    default:
+      return "fa-solid fa-file-circle-plus";
+  }
 }
 
 function pickGross(row) {
@@ -198,9 +236,17 @@ function renderRows(rows, { onOpen, onDuplicate, onDelete }) {
     const client = String(pickClient(row) || "—");
     const updated = String(pickUpdated(row) || "—");
     const gross = String(pickGross(row) || "—");
+    const status = pickOfferStatus(row);
+    const statusLabel = offerStatusLabel(status);
+    const statusIcon = offerStatusIcon(status);
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
+      <td class="statusCell">
+        <span class="offers-statusIcon offers-statusIcon--${status}" title="${statusLabel}" aria-label="${statusLabel}">
+          <i class="${statusIcon}"></i>
+        </span>
+      </td>
       <td class="num">${offerNo}</td>
       <td>${client}</td>
       <td class="muted">${updated}</td>
@@ -293,6 +339,8 @@ async function enrichOffers(list) {
 
         // client
         if (!r.client) r.client = p?.fields?.custName || p?.meta?.client || p?.client || "";
+        r.fields = { ...(r.fields || {}), ...(p?.fields || {}) };
+        r.offerStatus = pickOfferStatus(p);
 
         // totals
         const grossSaved = p?.totals?.gross ?? p?.totals?.sumGross ?? p?.totals?.totalGross;
@@ -342,14 +390,43 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
   const btnRefresh = qs("btnOffersRefresh");
   const btnBack = qs("btnOffersBack");
   const btnNew = qs("btnOffersNew");
+  const btnReportBack = qs("btnOffersReportBack");
+  const listView = qs("offersListView");
+  const reportView = qs("offersPmReportView");
+  const countPill = qs("offersCount")?.closest(".pill");
   const sortButtons = Array.from(document.querySelectorAll(".offers-sort-btn"));
+  const pmReport = initPmReportPanel();
 
   cloneTopbarHeader();
 
   let all = [];
   let sortState = { key: "created", dir: "desc" };
 
+  function syncTopbarVisibility(isReportView) {
+    if (searchEl) searchEl.style.display = isReportView ? "none" : "";
+    if (btnNew) btnNew.style.display = isReportView ? "none" : "inline-flex";
+    if (countPill) countPill.style.display = isReportView ? "none" : "inline-flex";
+  }
+
+  function showListView() {
+    listView?.classList.add("is-active");
+    reportView?.classList.remove("is-active");
+    if (btnRefresh) btnRefresh.style.display = "inline-flex";
+    if (btnReportBack) btnReportBack.style.display = "none";
+    syncTopbarVisibility(false);
+  }
+
+  async function showReportView() {
+    listView?.classList.remove("is-active");
+    reportView?.classList.add("is-active");
+    if (btnRefresh) btnRefresh.style.display = "none";
+    if (btnReportBack) btnReportBack.style.display = "inline-flex";
+    syncTopbarVisibility(true);
+    await pmReport.activate();
+  }
+
   async function refresh() {
+    showListView();
     all = await loadOffers();
     applyFilter();
     resetOffersTableScroll();
@@ -402,7 +479,8 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
       : all.filter((r) => {
           const a = String(pickOfferNo(r)).toLowerCase();
           const b = String(pickClient(r)).toLowerCase();
-          return a.includes(q) || b.includes(q);
+          const c = offerStatusLabel(pickOfferStatus(r)).toLowerCase();
+          return a.includes(q) || b.includes(q) || c.includes(q);
         });
 
     const sortedRows = sortRows(rows);
@@ -469,7 +547,10 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
     resetOffersTableScroll();
   }
 
-  btnRefresh?.addEventListener("click", refresh);
+  btnRefresh?.addEventListener("click", () => {
+    showReportView();
+  });
+  btnReportBack?.addEventListener("click", showListView);
   btnBack?.addEventListener("click", () => onBack?.());
   btnNew?.addEventListener("click", () => onNewOffer?.());
   searchEl?.addEventListener("input", applyFilter);
@@ -490,5 +571,5 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
 
   window.addEventListener("resize", resetOffersTableScroll);
 
-  return { refresh };
+  return { refresh, showListView, showReportView };
 }

@@ -82,8 +82,12 @@
 		  Nowa oferta
 		</button>
         <button id="btnOffersRefresh" class="secondary">
-		  <i class="fa-solid fa-rotate"></i>
-		  Odśwież
+		  <i class="fa-solid fa-chart-column"></i>
+		  Raport PM
+		</button>
+        <button id="btnOffersReportBack" class="secondary" style="display:none;">
+		  <i class="fa-solid fa-arrow-left"></i>
+		  Wróć do listy
 		</button>
         <button id="btnOffersBack" class="secondary">
 		  <i class="fa-solid fa-arrow-left"></i>
@@ -107,7 +111,9 @@
     <h2>Dane do wyceny</h2>
 
     <div class="card" style="padding:14px; margin-bottom:12px;">
-      <h2 style="margin:0 0 10px;">Numer oferty <span class="badge">auto</span></h2>
+      <div class="offerTopRow">
+        <div class="offerTopPrimary">
+          <h2 style="margin:0 0 10px;">Numer oferty <span class="badge">auto</span></h2>
 
 		<div class="offerNoBox">
 		  <div>
@@ -120,6 +126,17 @@
 		  Numer nadaje program przy tworzeniu nowej oferty. Przy edycji wczytanej oferty numer jest stały.
 		</div>
 
+        </div>
+        <div class="offerTopStatus">
+          <label for="offerStatus">Status oferty</label>
+          <select id="offerStatus">
+            <option value="nowa">Nowa</option>
+            <option value="zainteresowanie">Zainteresowanie</option>
+            <option value="realizacja">Realizacja</option>
+            <option value="zrealizowana">Zrealizowana</option>
+          </select>
+        </div>
+      </div>
     </div>
 
     <div class="split">
@@ -268,9 +285,21 @@
       </div>
 
       <div class="fields">
-        <div>
-          <label id="shippingNetLabel">Koszt wysyłki NETTO</label>
-          <input id="shippingNet" type="number" min="0" step="0.01" value="0" />
+        <div class="shippingField">
+          <label id="shippingNetLabel" for="shippingAmount">Koszt wysy&#322;ki (PLN)</label>
+          <div class="shippingAmountWrap">
+            <input id="shippingAmount" type="number" min="0" step="0.01" value="0" />
+            <div class="mini shippingHintBubble" id="shippingSummary" data-visible="false">
+              <div>Wpisano: <strong id="shippingEnteredValue">0,00 z&#322; netto</strong></div>
+              <div>Brutto: <strong id="shippingGrossValue">0,00 z&#322;</strong></div>
+            </div>
+            <label class="shippingModeSegment" for="shippingModeGross">
+              <input id="shippingModeGross" type="checkbox" />
+              <span class="mini shippingModeSegmentOption" id="shippingModeNetLabel" data-active="true">netto</span>
+              <span class="mini shippingModeSegmentOption" id="shippingModeGrossLabel" data-active="false">brutto</span>
+            </label>
+          </div>
+          <input id="shippingNet" type="hidden" value="0" />
         </div>
 		<div>
 		  <label>Szacunkowy czas realizacji (dni robocze)</label>
@@ -434,32 +463,389 @@
     <div class="offers-shell">
 
       <div class="offers-card">
-        <div id="offersEmpty" class="offers-empty" style="display:none;">Brak zapisanych ofert.</div>
-        <div id="offersTableWrap" class="offers-table-wrap">
-          <table class="offers-table" aria-label="Lista ofert">
-            <thead>
-              <tr>
-                <th style="min-width:170px;">
-                  <button type="button" class="offers-sort-btn is-active" data-sort-key="created">Numer <span class="offers-sort-indicator">↓</span></button>
-                </th>
-                <th style="min-width:260px;">
-                  <button type="button" class="offers-sort-btn" data-sort-key="client">Klient <span class="offers-sort-indicator">↕</span></button>
-                </th>
-                <th style="min-width:140px;">
-                  <button type="button" class="offers-sort-btn" data-sort-key="updated">Aktualizacja <span class="offers-sort-indicator">↕</span></button>
-                </th>
-                <th style="min-width:120px;" class="right">
-                  <button type="button" class="offers-sort-btn offers-sort-btn-right" data-sort-key="gross">Brutto <span class="offers-sort-indicator">↕</span></button>
-                </th>
-<th style="min-width:240px;" class="right">Akcje</th>
-              </tr>
-            </thead>
-            <tbody id="offersTbody"></tbody>
-          </table>
+        <div id="offersListView" class="offers-subview is-active">
+          <div id="offersEmpty" class="offers-empty" style="display:none;">Brak zapisanych ofert.</div>
+          <div id="offersTableWrap" class="offers-table-wrap">
+            <table class="offers-table" aria-label="Lista ofert">
+              <thead>
+                <tr>
+                  <th style="width:72px; min-width:72px;">Status</th>
+                  <th style="min-width:170px;">
+                    <button type="button" class="offers-sort-btn is-active" data-sort-key="created">Numer <span class="offers-sort-indicator">↓</span></button>
+                  </th>
+                  <th style="min-width:260px;">
+                    <button type="button" class="offers-sort-btn" data-sort-key="client">Klient <span class="offers-sort-indicator">↕</span></button>
+                  </th>
+                  <th style="min-width:140px;">
+                    <button type="button" class="offers-sort-btn" data-sort-key="updated">Aktualizacja <span class="offers-sort-indicator">↕</span></button>
+                  </th>
+                  <th style="min-width:120px;" class="right">
+                    <button type="button" class="offers-sort-btn offers-sort-btn-right" data-sort-key="gross">Brutto <span class="offers-sort-indicator">↕</span></button>
+                  </th>
+  <th style="min-width:240px;" class="right">Akcje</th>
+                </tr>
+              </thead>
+              <tbody id="offersTbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="offersPmReportView" class="offers-subview offers-report-view">
+          <div class="pmReportFabDock" aria-label="Szybkie akcje raportu">
+            <button type="button" id="pmReportQuickHtml" class="pmReportFabBtn pmReportFabBtn--secondary" title="Kopiuj HTML" aria-label="Kopiuj HTML">
+              <i class="fa-solid fa-code"></i>
+            </button>
+            <button type="button" id="pmReportQuickPdf" class="pmReportFabBtn" title="Eksport PDF" aria-label="Eksport PDF">
+              <i class="fa-solid fa-file-pdf"></i>
+            </button>
+          </div>
+          <div class="pmReportShell">
+            <section class="pmReportHero">
+              <div>
+                <div class="pmReportEyebrow">Raport okresowy</div>
+                <h2>Raport PM</h2>
+                <p>Wybierz miesiąc albo zakres dat, oznacz zrealizowane oferty i przygotuj gotowy raport do PDF oraz HTML.</p>
+              </div>
+              <div class="pmReportHeroMeta">
+                <div class="pmReportMetaCard">
+                  <span>Zakres raportu</span>
+                  <strong id="pmReportRangeLabel">-</strong>
+                </div>
+                <div class="pmReportMetaCard">
+                  <span>Plan na kolejny okres</span>
+                  <strong id="pmReportNextPeriodLabel">-</strong>
+                </div>
+              </div>
+            </section>
+
+            <section class="pmReportPanel">
+              <div class="pmReportToolbar">
+                <div class="pmReportModeSwitch" role="tablist" aria-label="Tryb zakresu raportu">
+                  <button type="button" id="pmReportModeMonth" class="pmReportModeBtn is-active">Cały miesiąc</button>
+                  <button type="button" id="pmReportModeRange" class="pmReportModeBtn">Zakres dat</button>
+                </div>
+
+                <div class="pmReportActions">
+                  <button type="button" id="pmReportApply" class="secondary">
+                    <i class="fa-solid fa-filter"></i>
+                    Pokaż oferty
+                  </button>
+                  <button type="button" id="pmReportExportHtml" class="secondary">
+                    <i class="fa-solid fa-code"></i>
+                    Kopiuj HTML
+                  </button>
+                  <button type="button" id="pmReportExportPdf">
+                    <i class="fa-solid fa-file-pdf"></i>
+                    Eksport PDF
+                  </button>
+                </div>
+              </div>
+
+              <div class="pmReportFilters">
+                <div id="pmReportMonthPanel" class="pmReportFilterPanel">
+                  <label class="pmReportField">
+                    <span>Miesiąc raportu</span>
+                    <input id="pmReportMonth" type="month" />
+                  </label>
+                </div>
+
+                <div id="pmReportRangePanel" class="pmReportFilterPanel" hidden>
+                  <label class="pmReportField">
+                    <span>Od</span>
+                    <input id="pmReportDateFrom" type="date" />
+                  </label>
+                  <label class="pmReportField">
+                    <span>Do</span>
+                    <input id="pmReportDateTo" type="date" />
+                  </label>
+                </div>
+
+                <label class="pmReportField pmReportFieldSalary">
+                  <span>Wynagrodzenie PM (miesięczne)</span>
+                  <input id="pmReportPmSalary" type="number" min="0" step="0.01" placeholder="0.00" />
+                </label>
+              </div>
+            </section>
+
+            <section class="pmReportSectionIntro">
+              <div class="pmReportSectionEyebrow">Sekcja ofert</div>
+              <h3>Oferty z programu</h3>
+              <p>Ta część raportu pokazuje pipeline i zrealizowane oferty z aplikacji, razem z porównaniem do poprzedniego analogicznego okresu.</p>
+            </section>
+
+            <section class="pmReportSummary" id="pmReportSummary">
+              <article class="pmReportStatCard">
+                <span>Oferty w zakresie</span>
+                <strong id="pmReportOffersInRange">0</strong>
+                <small id="pmReportOffersRealizedMeta">Zrealizowane: 0</small>
+              </article>
+              <article class="pmReportStatCard">
+                <span>Suma netto ofert</span>
+                <strong id="pmReportNetTotal">0,00 zł</strong>
+                <small>PLN wg kursów z aplikacji</small>
+              </article>
+              <article class="pmReportStatCard">
+                <span>Suma brutto ofert</span>
+                <strong id="pmReportGrossTotal">0,00 zł</strong>
+                <small>PLN wg kursów z aplikacji</small>
+              </article>
+              <article class="pmReportStatCard">
+                <span>Zysk netto ofert</span>
+                <strong id="pmReportProfitNet">0,00 zl</strong>
+                <small>Sprzedaż netto minus koszty zakupu</small>
+              </article>
+              <article class="pmReportStatCard">
+                <span>Zysk brutto ofert</span>
+                <strong id="pmReportProfitGross">0,00 zł</strong>
+                <small>Zysk netto z uwzględnieniem VAT oferty</small>
+              </article>
+              <article class="pmReportStatCard">
+                <span>Koszt PM dla okresu</span>
+                <strong id="pmReportPmCost">0,00 zł</strong>
+                <small id="pmReportPmCostHint">Na bazie wybranego okresu</small>
+              </article>
+            </section>
+
+            <section class="pmReportChartGrid pmReportChartGrid--offers">
+              <div class="pmReportChartCard">
+                <div class="pmReportChartTitle">Porównanie okres do okresu</div>
+                <div class="pmReportChartPlaceholder" id="pmReportOffersCompare">
+                  Wybierz zakres, aby zobaczyć porównanie do poprzedniego analogicznego okresu.
+                </div>
+              </div>
+              <div class="pmReportChartCard">
+                <div class="pmReportChartTitle">Wykres wartości ofert</div>
+                <div class="pmReportChartPlaceholder" id="pmReportOffersBars">
+                  Wykres pojawi się po załadowaniu ofert.
+                </div>
+              </div>
+            </section>
+
+            <section class="pmReportPanel">
+              <div class="pmReportPanelHead">
+                <div>
+                  <h3>Oferty do raportu</h3>
+                  <p>Na liście pokazują się oferty utworzone w wybranym zakresie. Zaznacz tylko te, które traktujesz jako zrealizowane.</p>
+                </div>
+                <div class="pmReportInlineActions">
+                  <button type="button" id="pmReportSelectAll" class="secondary">Zaznacz wszystko</button>
+                  <button type="button" id="pmReportClearSelection" class="secondary">Wyczyść zaznaczenie</button>
+                </div>
+              </div>
+
+              <div class="pmReportOffersWrap">
+                <table class="pmReportOffersTable">
+                  <thead>
+                    <tr>
+                      <th style="width:84px;">Real.</th>
+                      <th>Nr oferty</th>
+                      <th>Klient</th>
+                      <th>Data</th>
+                      <th>Waluta</th>
+                      <th class="right">Netto</th>
+                      <th class="right">Brutto</th>
+                      <th class="right">Zysk netto</th>
+                      <th class="right">Zysk brutto</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pmReportOffersBody">
+                    <tr>
+                      <td colspan="9" class="pmReportEmptyCell">Wybierz zakres i kliknij &quot;Pokaż oferty&quot;.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="pmReportEditors">
+              <article class="pmReportPanel pmReportEditorCard">
+                <div class="pmReportPanelHead">
+                  <div>
+                    <h3>Wykonane działania</h3>
+                    <p>Opis tego, co zostało zrobione w wybranym okresie. Możesz używać prostego formatowania BBCode i list.</p>
+                  </div>
+                </div>
+                <div class="pmReportBbToolbar" data-target="pmReportDoneText">
+                  <button type="button" class="secondary" data-bb="b"><b>B</b></button>
+                  <button type="button" class="secondary" data-bb="i"><i>I</i></button>
+                  <button type="button" class="secondary" data-bb="u"><u>U</u></button>
+                  <button type="button" class="secondary" data-bb="list">Lista</button>
+                  <button type="button" class="secondary" data-bb="item">Element</button>
+                </div>
+                <textarea id="pmReportDoneText" class="pmReportTextarea" placeholder="[list]
+[*] Audyt otwartych tematów
+[*] Przygotowanie i domknięcie ofert
+[/list]"></textarea>
+                <div class="pmReportPreviewLabel">Podgląd</div>
+                <div id="pmReportDonePreview" class="pmReportPreview"></div>
+              </article>
+
+              <article class="pmReportPanel pmReportEditorCard">
+                <div class="pmReportPanelHead">
+                  <div>
+                    <h3 id="pmReportPlanTitle">Plan na kolejny okres</h3>
+                    <p id="pmReportPlanHint">Plan powinien odpowiadać długości aktualnie wybranego okresu.</p>
+                  </div>
+                </div>
+                <div class="pmReportBbToolbar" data-target="pmReportPlanText">
+                  <button type="button" class="secondary" data-bb="b"><b>B</b></button>
+                  <button type="button" class="secondary" data-bb="i"><i>I</i></button>
+                  <button type="button" class="secondary" data-bb="u"><u>U</u></button>
+                  <button type="button" class="secondary" data-bb="list">Lista</button>
+                  <button type="button" class="secondary" data-bb="item">Element</button>
+                </div>
+                <textarea id="pmReportPlanText" class="pmReportTextarea" placeholder="[list]
+[*] Domknięcie tematów z pipeline
+[*] Dalsze prace nad kontami kluczowymi
+[/list]"></textarea>
+                <div class="pmReportPreviewLabel">Podgląd</div>
+                <div id="pmReportPlanPreview" class="pmReportPreview"></div>
+              </article>
+            </section>
+
+            <section class="pmReportSectionIntro">
+              <div class="pmReportSectionEyebrow">Sekcja Subiekt</div>
+              <h3>Sprzedaż i rentowność z Subiekta</h3>
+              <p>Ta część raportu dotyczy eksportu CSV z Subiekta i nie jest sumowana z sekcją ofert. Na końcu pokażemy obie perspektywy osobno.</p>
+            </section>
+
+            <section class="pmReportGrid">
+              <article class="pmReportPanel">
+                <div class="pmReportPanelHead">
+                  <div>
+                    <h3>Dane z Subiekta</h3>
+                    <p>Wczytaj plik CSV albo wklej tabelę z Subiekta. Raport policzy wyniki z uwzględnieniem ilości sztuk, grup towarowych i produktów o najwyższej rotacji.</p>
+                  </div>
+                </div>
+                <div class="pmReportUploadRow">
+                  <label class="pmReportUploadBtn">
+                    <input id="pmReportCsvFile" type="file" accept=".csv,text/csv" />
+                    <i class="fa-solid fa-file-arrow-up"></i>
+                    Wczytaj CSV sprzedaży
+                  </label>
+                  <div id="pmReportCsvMeta" class="pmReportCsvMeta">Brak pliku CSV.</div>
+                </div>
+                <label class="pmReportField">
+                  <span>Surowa tabela CSV z Subiekta</span>
+                  <textarea id="pmReportCsvRaw" class="pmReportTextarea pmReportTextarea--compact" placeholder="Wklej tutaj eksport CSV z Subiekta."></textarea>
+                </label>
+                <div id="pmReportSubiektStats" class="pmReportSubiektStats"></div>
+                <div class="pmReportSubiektTables">
+                  <div class="pmReportMiniTableCard">
+                    <div class="pmReportMiniTableTitle">Grupy towarowe</div>
+                    <table class="pmReportMiniTable">
+                      <thead>
+                        <tr>
+                          <th>Grupa</th>
+                          <th class="right">Netto</th>
+                          <th class="right">Zysk</th>
+                          <th class="right">ROI</th>
+                        </tr>
+                      </thead>
+                      <tbody id="pmReportGroupsBody">
+                        <tr>
+                          <td colspan="4" class="pmReportEmptyCell">Brak danych z Subiekta.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="pmReportMiniTableCard">
+                  <div class="pmReportMiniTableTitle">Pozycje do uwagi</div>
+                    <table class="pmReportMiniTable">
+                      <thead>
+                        <tr>
+                          <th>Towar</th>
+                          <th class="right">Ilość</th>
+                          <th class="right">Zysk</th>
+                          <th class="right">Marża</th>
+                        </tr>
+                      </thead>
+                      <tbody id="pmReportAttentionBody">
+                        <tr>
+                          <td colspan="4" class="pmReportEmptyCell">Brak danych z Subiekta.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </article>
+
+              <article class="pmReportPanel">
+                <div class="pmReportPanelHead">
+                  <div>
+                    <h3>Wnioski zarządcze z Subiekta</h3>
+                    <p>Pokazujemy wynik PM, rentowność grup i najlepiej rotujące produkty. Porównanie okres do okresu dochodzi przy imporcie kolejnych danych historycznych.</p>
+                  </div>
+                </div>
+                <div class="pmReportChartGrid">
+                  <div class="pmReportChartCard">
+                    <div class="pmReportChartTitle">ROI, wynik PM i udział grup</div>
+                    <div class="pmReportChartPlaceholder" id="pmReportRoiPlaceholder">
+                      Oczekuje na dane z CSV z Subiekta.
+                    </div>
+                  </div>
+                  <div class="pmReportChartCard">
+                    <div class="pmReportChartTitle">Najbardziej chodliwe towary</div>
+                    <div class="pmReportChartPlaceholder" id="pmReportMomPlaceholder">
+                      Lista pojawi sie po imporcie i parsowaniu CSV.
+                    </div>
+                  </div>
+                </div>
+                <div class="pmReportMiniTableCard pmReportMiniTableCard--spaced">
+                  <div class="pmReportMiniTableTitle">Top produkty po zysku</div>
+                  <table class="pmReportMiniTable">
+                    <thead>
+                      <tr>
+                        <th>Towar</th>
+                        <th class="right">Ilość</th>
+                        <th class="right">Netto</th>
+                        <th class="right">Zysk</th>
+                      </tr>
+                    </thead>
+                    <tbody id="pmReportTopProductsBody">
+                      <tr>
+                        <td colspan="4" class="pmReportEmptyCell">Brak danych z Subiekta.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="pmReportFormulaBox">
+                  <div class="pmReportFormulaTitle">Docelowy wzór PM netto</div>
+                  <ul>
+                    <li>G = zysk brutto kategorii z danych z Subiekta</li>
+                    <li>Wynik po kosztach firmy = G x 70%</li>
+                    <li>Koszt PM = wynagrodzenie x współczynnik okresu</li>
+                    <li>Wynik netto PM = G x 70% - koszt PM</li>
+                  </ul>
+                </div>
+              </article>
+            </section>
+
+            <section class="pmReportPanel">
+              <div class="pmReportPanelHead">
+                <div>
+                  <h3>Podsumowanie końcowe</h3>
+                  <p>Zestawiamy osobno wyniki z ofert i z Subiekta. Tych wartości nie sumujemy między sobą.</p>
+                </div>
+              </div>
+              <div id="pmReportFinalSummary" class="pmReportFinalSummary">
+                <div class="pmReportEmptyCell">Podsumowanie pojawi się po załadowaniu danych.</div>
+              </div>
+            </section>
+          </div>
+          <div class="offers-report-placeholder" hidden>
+            <div class="offers-report-badge">Nowy widok</div>
+            <h2>Raport PM</h2>
+            <p>To miejsce jest na razie puste. W kolejnym kroku podepniemy tutaj raportowanie.</p>
+            <button type="button" class="secondary" hidden>
+              <i class="fa-solid fa-arrow-left"></i>
+              Wróć do listy ofert
+            </button>
+          </div>
         </div>
       </div>
     </div>
-</div>
+  </div>
   
 <div id="settingsModalBackdrop" class="settingsModalBackdrop" style="display:none;">
   <div class="settingsModalCard">

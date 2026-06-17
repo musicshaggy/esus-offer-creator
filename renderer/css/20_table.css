@@ -327,6 +327,111 @@
       font-size:11px;
       line-height:1.35;
     }
+    .shippingField{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+    .shippingAmountWrap{
+      position:relative;
+    }
+    .shippingAmountWrap #shippingAmount{
+      padding-right:132px;
+    }
+    .shippingModeSegment{
+      position:absolute;
+      top:50%;
+      right:8px;
+      transform:translateY(-50%);
+      display:flex;
+      align-items:center;
+      gap:2px;
+      padding-left:8px;
+      border-left:1px solid rgba(255,255,255,.08);
+      cursor:pointer;
+      user-select:none;
+    }
+    .shippingModeSegment input{
+      position:absolute;
+      inset:0;
+      opacity:0;
+      margin:0;
+      cursor:pointer;
+    }
+    .shippingModeSegmentOption{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:50px;
+      padding:4px 8px;
+      border-radius:7px;
+      font-size:10px;
+      font-weight:800;
+      letter-spacing:.04em;
+      color:var(--muted);
+      text-transform:uppercase;
+      transition:background .16s ease, color .16s ease;
+    }
+    .shippingModeSegmentOption[data-active="true"]{
+      background:rgba(255,255,255,.06);
+      color:var(--text);
+    }
+    .shippingModeSegment:hover .shippingModeSegmentOption[data-active="false"]{
+      color:rgba(233,238,252,.82);
+    }
+    .shippingHintBubble{
+      position:absolute;
+      right:0;
+      bottom:calc(100% + 8px);
+      z-index:8;
+      min-width:220px;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.08);
+      background:#182235;
+      color:var(--text);
+      line-height:1.45;
+      box-shadow:0 12px 28px rgba(0,0,0,.28);
+      opacity:0;
+      transform:translateY(6px);
+      pointer-events:none;
+      transition:opacity .16s ease, transform .16s ease;
+    }
+    .shippingHintBubble::after{
+      content:"";
+      position:absolute;
+      top:100%;
+      right:24px;
+      width:10px;
+      height:10px;
+      background:#182235;
+      border-right:1px solid rgba(255,255,255,.08);
+      border-bottom:1px solid rgba(255,255,255,.08);
+      transform:translateY(-5px) rotate(45deg);
+    }
+    .shippingAmountWrap:hover .shippingHintBubble[data-visible="true"],
+    .shippingAmountWrap:focus-within .shippingHintBubble[data-visible="true"]{
+      opacity:1;
+      transform:translateY(0);
+    }
+    .shippingHintBubble strong{
+      color:#fff;
+      font-weight:800;
+    }
+    @media (max-width: 720px){
+      .shippingAmountWrap #shippingAmount{
+        padding-right:16px;
+        padding-bottom:42px;
+      }
+      .shippingModeSegment{
+        top:auto;
+        right:10px;
+        bottom:9px;
+        transform:none;
+        padding-left:0;
+        border-left:none;
+      }
+    }
 	/* Fix: dropdown list in dark UI (Chrome/Edge/Win) */
 	select {
 	  color: var(--text);

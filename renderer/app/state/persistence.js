@@ -26,9 +26,24 @@ export function applyFormState(state, { afterApply } = {}) {
     setItems(state.items.map((it) => ({
       desc: it.desc ?? "",
       net: Number(it.net ?? 0),
+      buyCcy: String(it.buyCcy || "PLN").toUpperCase(),
       buyNet: Number(it.buyNet ?? 0),
       discount: Number(it.discount ?? 0),
       qty: Math.max(1, parseInt(it.qty ?? 1, 10)),
+      warranty: {
+        months: Math.max(0, parseInt(it?.warranty?.months ?? 0, 10) || 0),
+        nbd: !!it?.warranty?.nbd,
+        lifetime: !!it?.warranty?.lifetime,
+      },
+      internalNote: String(it.internalNote ?? ""),
+      alternatives: Array.isArray(it?.alternatives)
+        ? it.alternatives.map((entry) => ({
+            desc: String(entry?.desc ?? ""),
+            net: Number(entry?.net ?? 0),
+            discount: Number(entry?.discount ?? 0),
+            qty: Math.max(1, parseInt(entry?.qty ?? 1, 10) || 1),
+          }))
+        : [],
     })));
   }
 

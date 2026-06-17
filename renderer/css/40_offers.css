@@ -51,6 +51,15 @@
   border:1px solid rgba(255,255,255,0.08);
   overflow:hidden;
 }
+.offers-subview{
+  display:none;
+  flex:1 1 auto;
+  min-height:0;
+}
+.offers-subview.is-active{
+  display:flex;
+  flex-direction:column;
+}
 .offers-table-wrap{
   flex:1 1 auto;
   width:100%;
@@ -101,6 +110,41 @@
 }
 .offers-table tbody td{padding:11px 12px;border-bottom:1px solid rgba(255,255,255,0.06);color:#e8eef7;vertical-align:middle;}
 .offers-table tbody tr:hover td{background:rgba(255,255,255,0.03);}
+.offers-table .statusCell{
+  width:72px;
+  text-align:center;
+}
+.offers-statusIcon{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:28px;
+  height:28px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:rgba(255,255,255,0.03);
+  font-size:13px;
+}
+.offers-statusIcon--nowa{
+  color:#8ec8ff;
+  background:rgba(56,189,248,0.10);
+  border-color:rgba(56,189,248,0.24);
+}
+.offers-statusIcon--zainteresowanie{
+  color:#f7cf6c;
+  background:rgba(245,158,11,0.12);
+  border-color:rgba(245,158,11,0.24);
+}
+.offers-statusIcon--realizacja{
+  color:#c7b7ff;
+  background:rgba(139,92,246,0.12);
+  border-color:rgba(139,92,246,0.24);
+}
+.offers-statusIcon--zrealizowana{
+  color:#86e0b3;
+  background:rgba(34,197,94,0.12);
+  border-color:rgba(34,197,94,0.24);
+}
 .offers-table .num{font-weight:900;white-space:nowrap;}
 .offers-table .muted{color:rgba(232,238,247,0.65);white-space:nowrap;}
 .offers-table .right{text-align:right;white-space:nowrap;}
@@ -720,6 +764,10 @@ table, thead, tbody, tr, td {
   overflow: auto !important;
 }
 
+#offersPage .offers-report-view{
+  overflow: auto !important;
+}
+
 body.offers-page-active{
   overflow:hidden;
   background:#0b0f14;
@@ -1038,18 +1086,934 @@ td { position: relative; }
   font-size: 12px;
   opacity: 0.9;
 }
+.offers-report-view{
+  padding:24px;
+  min-height:0;
+  overflow:auto !important;
+  overscroll-behavior:contain;
+}
+.offers-report-placeholder{
+  display:flex;
+  flex:1 1 auto;
+  min-height:0;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:center;
+  gap:14px;
+  padding:28px;
+  border-radius:18px;
+  border:1px dashed rgba(255,255,255,.12);
+  background:
+    radial-gradient(800px 320px at 0% 0%, rgba(0,154,255,.08), transparent 55%),
+    rgba(255,255,255,.02);
+}
+.offers-report-placeholder h2{
+  margin:0;
+  font-size:24px;
+  font-weight:800;
+  letter-spacing:.01em;
+}
+.offers-report-placeholder p{
+  margin:0;
+  max-width:560px;
+  color:rgba(232,238,247,.72);
+  line-height:1.55;
+}
+.offers-report-badge{
+  display:inline-flex;
+  align-items:center;
+  min-height:28px;
+  padding:0 10px;
+  border-radius:999px;
+  border:1px solid rgba(0,154,255,.24);
+  background:rgba(0,154,255,.10);
+  color:#9fd4ff;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:.05em;
+  text-transform:uppercase;
+}
+#offersPmReportView > .offers-report-placeholder{
+  display:none !important;
+}
+.pmReportShell{
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+  width:100%;
+}
+.pmReportFabDock{
+  position:fixed;
+  right:24px;
+  bottom:24px;
+  z-index:80;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  pointer-events:none;
+}
+.pmReportFabBtn{
+  width:52px;
+  height:52px;
+  border-radius:18px;
+  border:1px solid rgba(59,130,246,.28);
+  background:linear-gradient(180deg, rgba(59,130,246,.92), rgba(37,99,235,.9));
+  color:#fff;
+  box-shadow:0 18px 32px rgba(5,10,22,.28);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:18px;
+  cursor:pointer;
+  pointer-events:auto;
+  transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.pmReportFabBtn:hover{
+  transform:translateY(-1px);
+  box-shadow:0 22px 36px rgba(5,10,22,.34);
+}
+.pmReportFabBtn--secondary{
+  border-color:rgba(255,255,255,.12);
+  background:rgba(15,23,42,.92);
+  color:#d9e7ff;
+}
+.pmReportHero,
+.pmReportPanel,
+.pmReportStatCard{
+  border:1px solid rgba(255,255,255,.08);
+  background:
+    radial-gradient(900px 320px at 0% 0%, rgba(0,154,255,.06), transparent 52%),
+    rgba(255,255,255,.025);
+  box-shadow: 0 18px 36px rgba(5, 10, 22, 0.18);
+}
+.pmReportHero{
+  display:flex;
+  justify-content:space-between;
+  gap:18px;
+  padding:24px;
+  border-radius:22px;
+}
+.pmReportHero h2{
+  margin:6px 0 10px;
+  font-size:28px;
+  font-weight:800;
+}
+.pmReportHero p{
+  margin:0;
+  max-width:720px;
+  color:rgba(232,238,247,.76);
+  line-height:1.55;
+}
+.pmReportEyebrow{
+  display:inline-flex;
+  align-items:center;
+  min-height:28px;
+  padding:0 10px;
+  border-radius:999px;
+  background:rgba(56,189,248,.12);
+  border:1px solid rgba(56,189,248,.2);
+  color:#a5d8ff;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:.05em;
+  text-transform:uppercase;
+}
+.pmReportHeroMeta{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(180px, 1fr));
+  gap:12px;
+  min-width:min(42%, 420px);
+}
+.pmReportMetaCard{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  padding:16px 18px;
+  border-radius:18px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(10,16,30,.42);
+}
+.pmReportMetaCard span{
+  font-size:12px;
+  color:rgba(232,238,247,.64);
+}
+.pmReportMetaCard strong{
+  font-size:18px;
+  font-weight:800;
+}
+.pmReportPanel{
+  padding:18px;
+  border-radius:20px;
+}
+.pmReportToolbar,
+.pmReportPanelHead,
+.pmReportUploadRow{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:14px;
+}
+.pmReportPanelHead{
+  margin-bottom:14px;
+}
+.pmReportPanelHead h3{
+  margin:0 0 6px;
+  font-size:18px;
+  font-weight:800;
+}
+.pmReportPanelHead p{
+  margin:0;
+  color:rgba(232,238,247,.68);
+  line-height:1.5;
+}
+.pmReportModeSwitch{
+  display:inline-flex;
+  gap:8px;
+  padding:6px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.03);
+}
+.pmReportModeBtn{
+  min-height:40px;
+  padding:0 14px;
+  border-radius:12px;
+  border:1px solid transparent;
+  background:transparent;
+  color:rgba(232,238,247,.74);
+  font-weight:700;
+  cursor:pointer;
+}
+.pmReportModeBtn.is-active{
+  background:linear-gradient(180deg, rgba(59,130,246,.24), rgba(37,99,235,.18));
+  border-color:rgba(59,130,246,.34);
+  color:#fff;
+}
+.pmReportActions,
+.pmReportInlineActions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+}
+.pmReportFilters{
+  display:grid;
+  grid-template-columns:minmax(220px, 260px) minmax(220px, 1fr) minmax(220px, 280px);
+  gap:14px;
+  margin-top:16px;
+}
+.pmReportFilterPanel{
+  display:flex;
+  gap:14px;
+}
+.pmReportField{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  min-width:0;
+  width:100%;
+}
+.pmReportField span{
+  font-size:12px;
+  font-weight:700;
+  color:rgba(232,238,247,.7);
+}
+.pmReportField input,
+.pmReportTextarea{
+  width:100%;
+  box-sizing:border-box;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(9,14,28,.58);
+  color:#f8fbff;
+}
+.pmReportField input{
+  min-height:46px;
+  padding:0 14px;
+}
+.pmReportSectionIntro{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  padding:4px 2px 0;
+}
+.pmReportSectionEyebrow{
+  display:inline-flex;
+  align-self:flex-start;
+  min-height:28px;
+  align-items:center;
+  padding:0 10px;
+  border-radius:999px;
+  background:rgba(59,130,246,.12);
+  border:1px solid rgba(59,130,246,.2);
+  color:#9ec5ff;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:.05em;
+  text-transform:uppercase;
+}
+.pmReportSectionIntro h3{
+  margin:0;
+  font-size:22px;
+  font-weight:800;
+}
+.pmReportSectionIntro p{
+  margin:0;
+  color:rgba(232,238,247,.68);
+  line-height:1.55;
+}
+.pmReportSummary{
+  display:grid;
+  grid-template-columns:repeat(3, minmax(0, 1fr));
+  gap:14px;
+}
+.pmReportStatCard{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  min-height:128px;
+  padding:18px;
+  border-radius:20px;
+}
+.pmReportStatCard span{
+  font-size:12px;
+  font-weight:700;
+  color:rgba(232,238,247,.66);
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.pmReportStatCard strong{
+  font-size:28px;
+  line-height:1.1;
+  font-weight:800;
+}
+.pmReportStatCard small{
+  color:rgba(232,238,247,.58);
+  line-height:1.4;
+}
+.pmReportOffersWrap{
+  overflow:auto;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.08);
+}
+.pmReportOffersTable{
+  width:100%;
+  min-width:940px;
+  border-collapse:collapse;
+}
+.pmReportOffersTable thead th{
+  position:sticky;
+  top:0;
+  z-index:1;
+  background:rgba(30,41,59,.92);
+  text-align:left;
+  padding:12px 14px;
+  font-size:12px;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:rgba(232,238,247,.74);
+}
+.pmReportOffersTable td{
+  padding:14px;
+  border-top:1px solid rgba(255,255,255,.06);
+  vertical-align:middle;
+}
+.pmReportOffersTable tr:hover td{
+  background:rgba(255,255,255,.025);
+}
+.pmReportOffersTable .right{
+  text-align:right;
+}
+.pmReportEmptyCell{
+  padding:24px 14px !important;
+  text-align:center;
+  color:rgba(232,238,247,.6);
+}
+.pmReportCheckbox{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-size:12px;
+  color:rgba(232,238,247,.74);
+}
+.pmReportEditors,
+.pmReportGrid{
+  display:grid;
+  grid-template-columns:minmax(0, 1.15fr) minmax(360px, 0.85fr);
+  gap:18px;
+}
+.pmReportEditors > *,
+.pmReportGrid > *{
+  min-width:0;
+}
+.pmReportEditorCard{
+  min-height:100%;
+}
+.pmReportBbToolbar{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-bottom:12px;
+}
+.pmReportBbToolbar button{
+  min-width:48px;
+}
+.pmReportTextarea{
+  min-height:220px;
+  padding:14px;
+  resize:vertical;
+  font-family:inherit;
+  font-size:14px;
+  line-height:1.5;
+}
+.pmReportTextarea--compact{
+  min-height:180px;
+}
+.pmReportPreviewLabel{
+  margin:12px 0 8px;
+  font-size:12px;
+  font-weight:700;
+  color:rgba(232,238,247,.66);
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.pmReportPreview{
+  min-height:132px;
+  padding:14px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(9,14,28,.44);
+  color:rgba(248,251,255,.92);
+  line-height:1.6;
+}
+.pmReportPreview ul{
+  margin:0;
+  padding-left:18px;
+}
+.pmReportUploadBtn{
+  position:relative;
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  min-height:44px;
+  padding:0 16px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.04);
+  color:#f8fbff;
+  font-weight:700;
+  cursor:pointer;
+}
+.pmReportUploadBtn input{
+  position:absolute;
+  inset:0;
+  opacity:0;
+  cursor:pointer;
+}
+.pmReportCsvMeta{
+  align-self:center;
+  color:rgba(232,238,247,.64);
+  line-height:1.45;
+}
+.pmReportSubiektStats{
+  display:grid;
+  grid-template-columns:repeat(4, minmax(0, 1fr));
+  gap:12px;
+  margin-top:14px;
+}
+.pmReportSubiektStat{
+  padding:14px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(9,14,28,.44);
+}
+.pmReportSubiektStat span{
+  display:block;
+  font-size:11px;
+  font-weight:700;
+  color:rgba(232,238,247,.62);
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.pmReportSubiektStat strong{
+  display:block;
+  margin-top:8px;
+  font-size:22px;
+  font-weight:800;
+}
+.pmReportSubiektStat small{
+  display:block;
+  margin-top:6px;
+  color:rgba(232,238,247,.54);
+  line-height:1.4;
+}
+.pmReportSubiektTables{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:14px;
+  margin-top:14px;
+}
+.pmReportMiniTableCard{
+  padding:16px;
+  border-radius:18px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(9,14,28,.42);
+  min-width:0;
+  overflow:hidden;
+}
+.pmReportMiniTableCard--spaced{
+  margin-top:14px;
+}
+.pmReportMiniTableTitle{
+  margin-bottom:12px;
+  font-size:13px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  color:rgba(232,238,247,.78);
+}
+.pmReportMiniTable{
+  width:100%;
+  border-collapse:collapse;
+  table-layout:fixed;
+}
+.pmReportMiniTable thead th{
+  padding:10px 10px 10px 0;
+  border-bottom:1px solid rgba(255,255,255,.08);
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  color:rgba(232,238,247,.6);
+  text-align:left;
+}
+.pmReportMiniTable thead th.right,
+.pmReportMiniTable td.right{
+  text-align:right;
+}
+.pmReportMiniTable td{
+  padding:10px 10px 10px 0;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  vertical-align:top;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.pmReportMiniTable th:first-child,
+.pmReportMiniTable td:first-child{
+  width:auto;
+}
+.pmReportMiniTable th:not(:first-child),
+.pmReportMiniTable td:not(:first-child){
+  white-space:nowrap;
+  width:92px;
+}
+.pmReportMiniTable td:first-child{
+  white-space:normal;
+}
+.pmReportBarList{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  width:100%;
+}
+.pmReportBarRow{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) 92px;
+  gap:10px;
+  align-items:center;
+}
+.pmReportBarLabel{
+  min-width:0;
+}
+.pmReportBarName{
+  display:block;
+  font-size:12px;
+  font-weight:700;
+  color:#f8fbff;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.pmReportBarMeta{
+  display:block;
+  margin-top:3px;
+  font-size:11px;
+  color:rgba(232,238,247,.58);
+}
+.pmReportBarTrack{
+  position:relative;
+  height:10px;
+  margin-top:7px;
+  border-radius:999px;
+  background:rgba(255,255,255,.08);
+  overflow:hidden;
+}
+.pmReportBarFill{
+  position:absolute;
+  inset:0 auto 0 0;
+  border-radius:999px;
+  background:linear-gradient(90deg, rgba(56,189,248,.8), rgba(37,99,235,.92));
+}
+.pmReportBarValue{
+  text-align:right;
+  font-size:12px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.pmReportKpiList{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  width:100%;
+  min-width:0;
+}
+.pmReportKpiRow{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) auto;
+  align-items:center;
+  gap:12px;
+  padding-bottom:10px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.pmReportKpiRow:last-child{
+  padding-bottom:0;
+  border-bottom:0;
+}
+.pmReportKpiLabel{
+  color:rgba(232,238,247,.66);
+  font-size:12px;
+  min-width:0;
+}
+.pmReportKpiValue{
+  text-align:right;
+  font-size:15px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.pmReportValueNeg{
+  color:#ff8f8f;
+}
+.pmReportValuePos{
+  color:#82e6b5;
+}
+.pmReportChartGrid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:14px;
+}
+.pmReportChartGrid--offers{
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+}
+.pmReportChartCard{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  min-height:0;
+  padding:16px;
+  border-radius:18px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(9,14,28,.46);
+  min-width:0;
+  overflow:hidden;
+}
+.pmReportChartTitle{
+  font-size:14px;
+  font-weight:800;
+}
+.pmReportChartPlaceholder{
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  flex:1 1 auto;
+  padding:18px;
+  border-radius:14px;
+  border:1px dashed rgba(255,255,255,.14);
+  background:rgba(255,255,255,.02);
+  color:rgba(232,238,247,.58);
+  text-align:left;
+  line-height:1.6;
+  min-width:0;
+  overflow:hidden;
+}
+.pmReportChartStack{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+  width:100%;
+}
+.pmReportChartMiniTitle{
+  font-size:12px;
+  font-weight:700;
+  color:rgba(232,238,247,.72);
+}
+.pmReportChartPlaceholderText{
+  color:rgba(232,238,247,.58);
+  font-size:12px;
+}
+.pmReportFormulaBox{
+  margin-top:14px;
+  padding:16px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.03);
+}
+.pmReportFormulaTitle{
+  margin-bottom:10px;
+  font-size:13px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.pmReportFormulaBox ul{
+  margin:0;
+  padding-left:18px;
+  color:rgba(232,238,247,.72);
+  line-height:1.6;
+}
+.pmReportFinalSummary{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:14px;
+}
+.pmReportFinalCard{
+  padding:16px;
+  border-radius:18px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(9,14,28,.42);
+}
+.pmReportFinalRows{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.pmReportFinalRow{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) auto;
+  gap:12px;
+  align-items:center;
+}
+.pmReportFinalRow span{
+  color:rgba(232,238,247,.66);
+  font-size:12px;
+}
+.pmReportFinalRow strong{
+  font-size:14px;
+  font-weight:800;
+  text-align:right;
+}
+@media (max-width: 1600px){
+  .pmReportGrid,
+  .pmReportSubiektTables{
+    grid-template-columns:1fr;
+  }
+  .pmReportSubiektStats{
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1180px){
+  .pmReportSummary,
+  .pmReportEditors,
+  .pmReportChartGrid,
+  .pmReportChartGrid--offers,
+  .pmReportHeroMeta,
+  .pmReportFilters,
+  .pmReportSubiektStats,
+  .pmReportSubiektTables,
+  .pmReportFinalSummary,
+  .pmReportGrid{
+    grid-template-columns:1fr;
+  }
+  .pmReportHero,
+  .pmReportToolbar,
+  .pmReportPanelHead,
+  .pmReportUploadRow{
+    flex-direction:column;
+  }
+  .pmReportFilterPanel{
+    flex-direction:column;
+  }
+}
+@media (max-width: 720px){
+  .offers-report-view{
+    padding:16px;
+  }
+  .pmReportFabDock{
+    right:16px;
+    bottom:16px;
+  }
+  .pmReportFabBtn{
+    width:48px;
+    height:48px;
+    border-radius:16px;
+  }
+  .pmReportHero,
+  .pmReportPanel,
+  .pmReportStatCard{
+    border-radius:18px;
+  }
+  .pmReportStatCard strong{
+    font-size:24px;
+  }
+}
+.itemDetailsRow > td{
+  padding-top: 0;
+  border-top: 0;
+}
+.itemDetailsCell{
+  padding: 0 12px 14px;
+}
 
 /* panel z gwarancją — jeszcze bardziej „secondary” */
 .itemDetailsWarranty{
-  margin-top: 6px;
+  display:none;
+  flex-direction:column;
+  gap:14px;
+  width:100%;
+  box-sizing:border-box;
+  margin-top: 2px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.025);
   font-size: 12px;
   opacity: 0.75;
 }
+.itemDetailsWarrantyFields{
+  display:flex;
+  flex-wrap:wrap;
+  gap:14px 20px;
+  align-items:center;
+  justify-content:flex-start;
+}
 .itemDetailsWarranty label.mini{
+  display:inline-flex;
+  gap:8px;
+  align-items:center;
+  margin:0;
   font-size: 12px;
   opacity: 0.9;
+  white-space:nowrap;
+}
+.itemDetailsWarranty input[data-k="warrantyMonths"]{
+  width:80px;
 }
 .itemDetailsWarranty:not([hidden]){ display: flex; }
+.itemVariantsBlock{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  width:100%;
+  margin-top:0;
+  padding-top:10px;
+  border-top:1px dashed rgba(255,255,255,.08);
+}
+.itemVariantsHead{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.itemVariantsTitleWrap{
+  min-width:0;
+}
+.itemVariantsTitle{
+  font-size:12px;
+  font-weight:700;
+  color:var(--text);
+}
+.itemVariantsHint{
+  margin-top:3px;
+  font-size:11px;
+  line-height:1.4;
+  color:var(--muted);
+}
+.itemVariantsList{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.itemVariantsEmpty{
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px dashed rgba(255,255,255,.1);
+  background:rgba(255,255,255,.025);
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.45;
+}
+.itemVariantRow{
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.03);
+}
+.itemVariantHead{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.itemVariantActions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+.itemVariantBadge{
+  display:inline-flex;
+  align-items:center;
+  padding:3px 8px;
+  border-radius:999px;
+  border:1px solid rgba(0,154,255,.2);
+  background:rgba(0,154,255,.08);
+  color:var(--text);
+  font-size:11px;
+  font-weight:700;
+}
+.itemVariantRemoveBtn{
+  width:28px;
+  height:28px;
+  padding:0;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.08);
+  background:transparent;
+  color:var(--muted);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+.itemVariantPromoteBtn{
+  white-space:nowrap;
+}
+.itemVariantRemoveBtn:hover{
+  color:var(--text);
+  background:rgba(255,255,255,.06);
+  transform:none;
+}
+.itemVariantFields{
+  display:grid;
+  grid-template-columns:minmax(0, 1.4fr) 150px 120px 100px;
+  gap:10px;
+  margin-top:10px;
+}
+.itemVariantDescInput{
+  min-width:0;
+  width:100%;
+}
+.itemVariantPrice{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  margin:0;
+}
+.itemVariantPrice input{
+  width:100%;
+}
+@media (max-width: 900px){
+  .itemVariantFields{
+    grid-template-columns:1fr;
+  }
+}
 
 .itemRowMetaActions{
   display:flex;
