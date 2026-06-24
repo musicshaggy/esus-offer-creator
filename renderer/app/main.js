@@ -1091,7 +1091,7 @@ function initUpdateToasts() {
       type: "info",
       ms: 15000,
       actionLabel: "Pobierz",
-      secondaryLabel: "PĂłĹşniej",
+      secondaryLabel: "P\u00f3\u017aniej",
       onSecondary: async () => {},
       keepOpenOnAction: true,
       onAction: async () => {
@@ -1152,7 +1152,7 @@ function initUpdateToasts() {
           type: "info",
           ms: 0,
           actionLabel: "Uruchom ponownie",
-          secondaryLabel: "PĂłĹşniej",
+          secondaryLabel: "P\u00f3\u017aniej",
           onSecondary: async () => {},
           onAction: async () => window.esusAPI.updateQuitAndInstall(),
         });
