@@ -2,6 +2,7 @@
 import { LOGO_URL_B, NOTO_REG_URL, NOTO_BOLD_URL } from "../config/constants.js";
 import { getVatFromUI } from "../utils/vat.js";
 import { el, toNumber } from "../utils/format.js";
+import { computeShippingValues } from "../utils/shipping.js";
 import { store } from "../state/store.js";
 import { itemNetAfterDiscount } from "../calc/pricing.js";
 import { buildOfferNumber } from "../ui/offerNumber.js";
@@ -228,6 +229,68 @@ function getWarrantyParts(it, lang) {
     nbd,
     text: formatWarrantyText(lang, w),
   };
+}
+
+function getAlternativeParts(it, lang, currency) {
+  if (!Array.isArray(it?.alternatives)) return [];
+
+  return it.alternatives
+    .map((entry, index) => {
+      const desc = String(entry?.desc || "").trim();
+      const net = Number(entry?.net ?? 0);
+      const discount = Math.min(100, Math.max(0, Number(entry?.discount ?? 0) || 0));
+      const qty = Math.max(1, parseInt(entry?.qty ?? 1, 10) || 1);
+      if (!desc && !(Math.abs(net) > 0) && !(discount > 0) && !(qty > 1)) return null;
+
+      return {
+        marker: getAlternativeMarker(index),
+        desc: desc || "-",
+        net,
+        discount,
+        qty,
+      };
+    })
+    .filter(Boolean);
+}
+
+function getAlternativeMarker(index) {
+  return index < 26 ? String.fromCharCode(98 + index) : String(index + 2);
+}
+
+function formatSignedMoney(value, lang, currency) {
+  const amount = formatMoney(Math.abs(Number(value || 0)), lang, currency);
+  const numeric = Number(value || 0);
+  if (Math.abs(numeric) < 0.005) return amount;
+  return `${numeric > 0 ? "+" : "-"}${amount}`;
+}
+
+function buildAlternativeImpactRows(items, { lang, currency, vatRate, baseSumGross }) {
+  return items.flatMap((it, idx) => {
+    const qty = Math.max(1, parseInt(it?.qty || 1, 10) || 1);
+    const mainGrossLine = itemNetAfterDiscount(it) * (1 + vatRate) * qty;
+    const itemBaseNumber = String(idx + 1);
+    const alternatives = getAlternativeParts(it, lang, currency);
+
+    return alternatives.map((entry, altIdx) => {
+      const altDisc = Math.min(100, Math.max(0, Number(entry?.discount ?? 0) || 0));
+      const altQty = Math.max(1, parseInt(entry?.qty ?? 1, 10) || 1);
+      const altNet = Math.max(0, Number(entry?.net ?? 0) || 0);
+      const altNetAfter = altNet * (1 - altDisc / 100);
+      const altGrossLine = altNetAfter * (1 + vatRate) * altQty;
+      const deltaGross = altGrossLine - mainGrossLine;
+      const nextSumGross = baseSumGross + deltaGross;
+      const variantCode = `${itemBaseNumber}${entry.marker || getAlternativeMarker(altIdx)}`;
+      const variantLabel = `${t(lang, "variantsImpactVariant") || "Variant"} ${variantCode}`;
+
+      return [
+        variantCode,
+        pdfSafeText(`${variantLabel}: ${entry.desc || "-"}`),
+        pdfSafeText(formatMoney(altGrossLine, lang, currency)),
+        pdfSafeText(formatSignedMoney(deltaGross, lang, currency)),
+        pdfSafeText(formatMoney(nextSumGross, lang, currency)),
+      ];
+    });
+  });
 }
 
 /* ===== ESUS enterprise styles ===== */
@@ -777,8 +840,7 @@ export async function generatePdf({ onBefore } = {}) {
     includeVatCol: true,
     vatBetweenNetAndGross: true,
   });
-
-  const body = store.items.map((it, idx) => {
+  const body = store.items.flatMap((it, idx) => {
     const qty = Math.max(1, parseInt(it.qty || 1, 10));
     const disc = Math.min(100, Math.max(0, toNumber(it.discount)));
     const netAfter = itemNetAfterDiscount(it);
@@ -787,31 +849,72 @@ export async function generatePdf({ onBefore } = {}) {
     const grossLine = grossUnit * qty;
 
     const warranty = getWarrantyParts(it, lang);
-    const descCell = warranty ? `${it.desc || "-"}\n\u200B` : (it.desc || "-");
+    const alternativeLines = getAlternativeParts(it, lang, DOC_CCY);
+    const itemBaseNumber = String(idx + 1);
+    const hasAlternatives = alternativeLines.length > 0;
+    const mainVariantCode = `${itemBaseNumber}a`;
+    const mainLabel = hasAlternatives
+      ? `${t(lang, "primaryOption") || "Main option"} ${mainVariantCode}: ${it.desc || "-"}`
+      : (it.desc || "-");
+    const descCell = warranty ? `${mainLabel}\n${warranty.text}` : mainLabel;
 
-    const row = [
-      String(idx + 1),
+    const mainRow = [
+      hasAlternatives ? `${itemBaseNumber}a` : itemBaseNumber,
       descCell,
       formatMoney(netAfter, lang, DOC_CCY).replace(/\s?[A-Z]{3}$/i, "").trim(),
     ];
 
     if (showDiscountCol) {
-      row.push(`${disc.toLocaleString(locale, { maximumFractionDigits: 2 })}%`);
+      mainRow.push(`${disc.toLocaleString(locale, { maximumFractionDigits: 2 })}%`);
     }
 
-    row.push(
+    mainRow.push(
       vatCellLabel,
       formatMoney(grossUnit, lang, DOC_CCY).replace(/\s?[A-Z]{3}$/i, "").trim(),
       String(qty),
       formatMoney(grossLine, lang, DOC_CCY).replace(/\s?[A-Z]{3}$/i, "").trim()
     );
 
-    row.__warranty = warranty;
-    return row;
+    mainRow.__isAlternative = false;
+    mainRow.__parentIndex = idx;
+
+    const alternativeRows = alternativeLines.map((entry, altIndex) => {
+      const altDisc = Math.min(100, Math.max(0, Number(entry?.discount ?? 0) || 0));
+      const altQty = Math.max(1, parseInt(entry?.qty ?? 1, 10) || 1);
+      const altNet = Math.max(0, Number(entry?.net ?? 0) || 0);
+      const altNetAfter = altNet * (1 - altDisc / 100);
+      const altGrossUnit = altNetAfter * (1 + VAT_RATE);
+      const altGrossLine = altGrossUnit * altQty;
+      const altMarker = entry.marker || getAlternativeMarker(altIndex);
+      const altCode = `${itemBaseNumber}${altMarker}`;
+      const altDesc = `${t(lang, "variantsImpactVariant") || "Variant"} ${altCode}: ${entry.desc || "-"}`;
+
+      const altRow = [
+        altCode,
+        altDesc,
+        formatMoney(altNetAfter, lang, DOC_CCY).replace(/\s?[A-Z]{3}$/i, "").trim(),
+      ];
+
+      if (showDiscountCol) {
+        altRow.push(`${altDisc.toLocaleString(locale, { maximumFractionDigits: 2 })}%`);
+      }
+
+      altRow.push(
+        vatCellLabel,
+        formatMoney(altGrossUnit, lang, DOC_CCY).replace(/\s?[A-Z]{3}$/i, "").trim(),
+        String(altQty),
+        formatMoney(altGrossLine, lang, DOC_CCY).replace(/\s?[A-Z]{3}$/i, "").trim()
+      );
+
+      altRow.__isAlternative = true;
+      altRow.__parentIndex = idx;
+      return altRow;
+    });
+
+    return [mainRow, ...alternativeRows];
   });
 
   const baseTableFont = 9;
-  const warrantyFont = Math.max(6, Math.round(baseTableFont * 0.8));
   const VAT_COL_INDEX = showDiscountCol ? 4 : 3;
 
   doc.autoTable({
@@ -837,30 +940,19 @@ export async function generatePdf({ onBefore } = {}) {
       1: { cellWidth: showDiscountCol ? 62 : 70 },
       [VAT_COL_INDEX]: { cellWidth: 14, halign: "center" },
     },
-    didDrawCell: (data) => {
+    didParseCell: (data) => {
       if (data.section !== "body") return;
-      if (data.column.index !== 1) return;
+      const raw = data.row?.raw;
+      if (!raw?.__isAlternative) return;
 
-      const w = data.row?.raw?.__warranty;
-      if (!w) return;
+      data.cell.styles.fillColor = [243, 246, 250];
+      data.cell.styles.textColor = [86, 94, 108];
+      data.cell.styles.lineColor = [220, 226, 235];
+      data.cell.styles.cellPadding = { top: 1.8, right: 2.2, bottom: 1.8, left: 2.2 };
 
-      const scale = doc.internal.scaleFactor || 2.83465;
-      const lines = Array.isArray(data.cell.text) ? data.cell.text.length : 1;
-
-      const baseLineH = (baseTableFont / scale) * 1.15;
-      const warrantyLineH = (warrantyFont / scale) * 1.15;
-
-      const x0 = data.cell.x + data.cell.padding("left");
-
-      let y = data.cell.y + data.cell.padding("top") + (lines - 1) * baseLineH;
-      y += (baseLineH - warrantyLineH) * 3;
-
-      doc.setFont(fontName, "normal");
-      doc.setFontSize(warrantyFont);
-      doc.text(w.text, x0, y);
-
-      doc.setFont(fontName, "normal");
-      doc.setFontSize(baseTableFont);
+      if (data.column.index === 0) {
+        data.cell.styles.textColor = [160, 168, 182];
+      }
     },
   });
 
@@ -872,7 +964,9 @@ export async function generatePdf({ onBefore } = {}) {
   const sumVat = sumNet * VAT_RATE;
   const sumGross = sumNet + sumVat;
 
-  const shipNet = toNumber(el("shippingNet").value);
+  const shipValues = computeShippingValues({ vatRate: VAT_RATE });
+  const shipNet = shipValues.net;
+  const shipGross = shipValues.gross;
 
   const at = doc.lastAutoTable;
 
@@ -926,6 +1020,85 @@ export async function generatePdf({ onBefore } = {}) {
     doc.setTextColor(0);
   }
 
+  const alternativeImpactRows = buildAlternativeImpactRows(store.items, {
+    lang,
+    currency: DOC_CCY,
+    vatRate: VAT_RATE,
+    baseSumGross: sumGross,
+  });
+
+  if (alternativeImpactRows.length) {
+    let impactY = afterTotalsY + 6;
+    if (ensureSpace(26, impactY)) impactY = margin + 20;
+
+    const impactTitle = pdfSafeText(String(t(lang, "variantsImpactTitle") || "Variant impact on offer value"));
+    doc.setFont(fontName, "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(25, 35, 45);
+    doc.text(impactTitle, tableX, impactY);
+
+    let impactTableY = impactY + 4.5;
+    const alternativesNote = String(t(lang, "alternativesSummaryNote") || "").trim();
+    if (alternativesNote) {
+      doc.setFont(fontName, "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(130, 138, 148);
+
+      const wrappedNote = doc.splitTextToSize(alternativesNote, tableW);
+      doc.text(wrappedNote, tableX, impactTableY);
+      impactTableY += Math.max(0, wrappedNote.length - 1) * 3.4 + 4;
+    }
+
+    doc.setTextColor(0);
+
+    doc.autoTable({
+      startY: impactTableY,
+      margin: { left: tableX, right: pageW - tableX - tableW },
+      tableWidth: tableW,
+      head: [[
+        pdfSafeText(String(t(lang, "thLp") || "Lp")),
+        pdfSafeText(String(t(lang, "variantsImpactVariant") || "Variant")),
+        pdfSafeText(String(t(lang, "variantsImpactPrice") || "Variant price")),
+        pdfSafeText(String(t(lang, "variantsImpactDelta") || "Change vs main")),
+        pdfSafeText(String(t(lang, "variantsImpactNewGross") || "New gross total")),
+      ]],
+      body: alternativeImpactRows,
+      theme: "grid",
+      headStyles: {
+        fillColor: [243, 246, 250],
+        textColor: [25, 35, 45],
+        lineColor: [220, 228, 238],
+        font: fontName,
+        fontStyle: "bold",
+      },
+      styles: {
+        font: fontName,
+        fontStyle: "normal",
+        fontSize: 8,
+        cellPadding: 2,
+        lineColor: [220, 228, 238],
+        textColor: [55, 67, 82],
+      },
+      columnStyles: {
+        0: { cellWidth: 12, halign: "center" },
+        1: { cellWidth: 74 },
+        2: { cellWidth: 28, halign: "right" },
+        3: { cellWidth: 28, halign: "right" },
+        4: { cellWidth: 32, halign: "right" },
+      },
+      didParseCell: (data) => {
+        if (data.section !== "body") return;
+        if (data.column.index === 3) {
+          const rawValue = String(data.cell.raw || "").trim();
+          if (rawValue.startsWith("-")) data.cell.styles.textColor = [12, 124, 72];
+          if (rawValue.startsWith("+")) data.cell.styles.textColor = [190, 60, 60];
+        }
+      },
+    });
+
+    afterTotalsY = doc.lastAutoTable?.finalY ?? impactTableY;
+  }
+
   // ===== Terms =====
   let termsY = afterTotalsY + 6;
   if (ensureSpace(40, termsY)) termsY = margin + 20;
@@ -952,12 +1125,12 @@ export async function generatePdf({ onBefore } = {}) {
     {
       label: labelNoColon(lang, "delivery"),
       value:
-        shipNet === 0
+        shipGross === 0
           ? (t(lang, "deliverySellerCost") || "—")
           : (
               (lang === "pl")
-                ? `Wysyłka kurierska (${formatMoney(shipNet, lang, DOC_CCY)} netto)`
-                : `${t(lang, "shippingNet")} (${formatMoney(shipNet, lang, DOC_CCY)})`
+                ? `Wysyłka kurierska (${formatMoney(shipNet, lang, DOC_CCY)} netto / ${formatMoney(shipGross, lang, DOC_CCY)} brutto)`
+                : `${t(lang, "shippingNet")} / ${t(lang, "shippingGross")} (${formatMoney(shipNet, lang, DOC_CCY)} / ${formatMoney(shipGross, lang, DOC_CCY)})`
             ),
     },
     { label: labelNoColon(lang, "validity"), value: validUntil, valueBold: true },

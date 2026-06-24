@@ -39,6 +39,7 @@ function applyNewOfferDefaults(payload) {
 
   // (opcjonalnie) jeżeli wolisz mieć czysto też na poziomie JSON:
   p.fields.termsExtra = "";
+  p.fields.offerStatus = "nowa";
   return p;
 }
 

@@ -3,9 +3,165 @@ import { store, removeItem, updateItem, moveItem } from "../state/store.js";
 import { itemNetAfterDiscount, calcRowProfitAndMargin } from "../calc/pricing.js";
 import { getRateToPLN } from "../utils/exchangeRates.js";
 import { getVatRateFromUI } from "../utils/vat.js";
+import { convert } from "../utils/currency.js";
 
 function offerCcy() {
   return String(store.offer?.ccy || store.settings?.offerCcy || "PLN").toUpperCase();
+}
+
+function normalizeItemAlternatives(alternatives = []) {
+  if (!Array.isArray(alternatives)) return [];
+  return alternatives.map((entry) => ({
+    desc: String(entry?.desc ?? ""),
+    net: Number(entry?.net ?? 0),
+    discount: Number(entry?.discount ?? 0),
+    qty: Math.max(1, parseInt(entry?.qty ?? 1, 10) || 1),
+  }));
+}
+
+function getItemAlternatives(item) {
+  return normalizeItemAlternatives(item?.alternatives);
+}
+
+function getAlternativeLabel(index) {
+  return `Wariant ${index + 1}`;
+}
+
+function buildPrimaryFromAlternative(item, altIdx) {
+  const alternatives = getItemAlternatives(item);
+  const picked = alternatives[altIdx];
+  if (!picked) return null;
+
+  const previousPrimary = {
+    desc: String(item?.desc ?? ""),
+    net: toNumber(item?.net),
+    discount: toNumber(item?.discount),
+    qty: Math.max(1, parseInt(item?.qty ?? 1, 10) || 1),
+  };
+
+  const nextAlternatives = alternatives.map((entry, idx) =>
+    idx === altIdx
+      ? previousPrimary
+      : {
+          desc: String(entry?.desc ?? ""),
+          net: toNumber(entry?.net),
+          discount: toNumber(entry?.discount),
+          qty: Math.max(1, parseInt(entry?.qty ?? 1, 10) || 1),
+        }
+  );
+
+  return {
+    desc: String(picked?.desc ?? ""),
+    net: toNumber(picked?.net),
+    discount: toNumber(picked?.discount),
+    qty: Math.max(1, parseInt(picked?.qty ?? 1, 10) || 1),
+    alternatives: nextAlternatives,
+  };
+}
+
+function setItemDetailsExpanded(itemIdx, expanded = true) {
+  const tbody = el("itemsBody");
+  if (!tbody || !Number.isFinite(itemIdx) || itemIdx < 0) return;
+
+  const panel = tbody.querySelector(`.itemDetailsWarranty[data-warranty="${itemIdx}"]`);
+  const detailsRow = tbody.querySelector(`.itemDetailsRow[data-item-index="${itemIdx}"]`);
+  const toggle = tbody.querySelector(`.itemDetailsToggle[data-i="${itemIdx}"]`);
+  if (!panel || !toggle) return;
+
+  if (detailsRow) detailsRow.hidden = !expanded;
+  panel.hidden = !expanded;
+
+  const caret = toggle.querySelector(".itemDetailsCaret");
+  if (caret) caret.textContent = expanded ? "â§" : "â¨";
+  if (caret) caret.textContent = expanded ? "\u2227" : "\u2228";
+  toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+}
+
+function buildAlternativesMarkup(alternatives, itemIdx, currency) {
+  if (!alternatives.length) {
+    return `
+      <div class="itemVariantsEmpty">
+        Dodaj wariant, je\u015bli w tej wycenie klient ma dosta\u0107 alternatyw\u0119 dla tej pozycji.
+      </div>
+    `;
+  }
+
+  return alternatives.map((alternative, altIdx) => `
+    <div class="itemVariantRow">
+      <div class="itemVariantHead">
+        <span class="itemVariantBadge">${escapeHtml(getAlternativeLabel(altIdx))}</span>
+        <div class="itemVariantActions">
+          <button
+            type="button"
+            class="btnTiny secondary itemVariantPromoteBtn"
+            data-alt-promote="${itemIdx}"
+            data-alt-index="${altIdx}"
+            title="Ustaw ten wariant jako g\u0142\u00f3wny"
+            aria-label="Ustaw ten wariant jako g\u0142\u00f3wny"
+          >
+            Ustaw jako g\u0142\u00f3wny
+          </button>
+          <button
+            type="button"
+            class="itemVariantRemoveBtn"
+            data-alt-del="${itemIdx}"
+            data-alt-index="${altIdx}"
+            title="Usu\u0144 wariant"
+            aria-label="Usu\u0144 wariant"
+          >
+            &times;
+          </button>
+        </div>
+      </div>
+      <div class="itemVariantFields">
+        <input
+          class="itemVariantDescInput"
+          data-k="altDesc"
+          data-i="${itemIdx}"
+          data-alt="${altIdx}"
+          placeholder="Opis wariantu alternatywnego..."
+          value="${escapeHtml(alternative?.desc ?? "")}"
+        />
+        <label class="itemVariantPrice">
+          <span class="mini">Netto (${currency})</span>
+          <input
+            data-k="altNet"
+            data-i="${itemIdx}"
+            data-alt="${altIdx}"
+            type="number"
+            min="0"
+            step="0.01"
+            value="${toNumber(alternative?.net)}"
+          />
+        </label>
+        <label class="itemVariantPrice">
+          <span class="mini">Rabat (%)</span>
+          <input
+            data-k="altDiscount"
+            data-i="${itemIdx}"
+            data-alt="${altIdx}"
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            value="${toNumber(alternative?.discount)}"
+          />
+        </label>
+        <label class="itemVariantPrice">
+          <span class="mini">Ilość</span>
+          <input
+            data-k="altQty"
+            data-i="${itemIdx}"
+            data-alt="${altIdx}"
+            type="number"
+            min="1"
+            step="1"
+            value="${Math.max(1, parseInt(alternative?.qty ?? 1, 10) || 1)}"
+          />
+        </label>
+      </div>
+    </div>
+  `).join("");
 }
 
 /** ===== Tooltip: cena po rabacie (singleton) ===== */
@@ -152,13 +308,16 @@ function warrantyToggleHandler(e) {
   if (!Number.isFinite(i)) return;
 
   const panel = tbody.querySelector(`.itemDetailsWarranty[data-warranty="${i}"]`);
+  const detailsRow = tbody.querySelector(`.itemDetailsRow[data-item-index="${i}"]`);
   if (!panel) return;
 
+  if (detailsRow) detailsRow.hidden = !detailsRow.hidden;
   panel.hidden = !panel.hidden;
 
   const caret = toggle.querySelector(".itemDetailsCaret");
   const expanded = !panel.hidden;
   if (caret) caret.textContent = expanded ? "∧" : "∨";
+  if (caret) caret.textContent = expanded ? "\u2227" : "\u2228";
   toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
 }
 
@@ -425,7 +584,7 @@ function updateItemsSyncGutter() {
   const wrapRect = wrap.getBoundingClientRect();
   gutter.innerHTML = "";
 
-  Array.from(tbody.querySelectorAll("tr")).forEach((row) => {
+  Array.from(tbody.querySelectorAll('tr[data-item-main="1"]')).forEach((row) => {
     const state = row.classList.contains("itemRowSync-synced")
       ? "synced"
       : row.classList.contains("itemRowSync-missing")
@@ -495,6 +654,17 @@ function productGrossToNet(priceGross) {
   return roundMoney(vatRate > 0 ? gross / (1 + vatRate) : gross);
 }
 
+function getOfferCurrencyFromStore() {
+  return String(store.offer?.ccy || store.settings?.offerCcy || "PLN").toUpperCase();
+}
+
+function convertIaiGrossPriceToOfferCurrency(priceGross, sourceCurrency) {
+  const gross = Number(priceGross || 0);
+  const from = String(sourceCurrency || "PLN").toUpperCase();
+  const to = getOfferCurrencyFromStore();
+  return roundMoney(convert(gross, from, to));
+}
+
 function getProductDisplayName(product, fallback = "") {
   return String(
     product?.name ||
@@ -518,6 +688,8 @@ function applyIdoSellProductToItem(itemIdx, product, { onTotalsChanged, onStateC
     Number.isFinite(Number(rawBuyNet));
   const buyNet = hasBuyNet ? roundMoney(Number(rawBuyNet)) : null;
   const buyCcy = String(product?.currency || store.items[itemIdx]?.buyCcy || "PLN").toUpperCase();
+  const offerCurrency = getOfferCurrencyFromStore();
+  const convertedGross = convertIaiGrossPriceToOfferCurrency(product?.priceGross, product?.currency);
 
   if (descInput) {
     descInput.value = desc;
@@ -525,7 +697,7 @@ function applyIdoSellProductToItem(itemIdx, product, { onTotalsChanged, onStateC
 
   updateItem(itemIdx, {
     desc,
-    net: productGrossToNet(product?.priceGross),
+    net: productGrossToNet(convertedGross),
     ...(buyNet !== null ? { buyNet, buyCcy } : {}),
     iaiSync: {
       provider: "idosell",
@@ -536,9 +708,11 @@ function applyIdoSellProductToItem(itemIdx, product, { onTotalsChanged, onStateC
       productName: desc,
       producerCode: String(product?.producerCode || "").trim(),
       producer: String(product?.producer || "").trim(),
-      priceGross: Number(product?.priceGross || 0),
+      priceGross: convertedGross,
       buyNet,
-      currency: String(product?.currency || offerCcy()).toUpperCase(),
+      currency: offerCurrency,
+      sourcePriceGross: Number(product?.priceGross || 0),
+      sourceCurrency: String(product?.currency || "PLN").toUpperCase(),
     },
   });
 
@@ -729,8 +903,17 @@ function ensureProductSearchModal() {
         product?.producer ? `Producent: ${escapeHtml(product.producer)}` : "",
         product?.producerCode ? `Kod producenta: ${escapeHtml(product.producerCode)}` : "",
       ].filter(Boolean).join(" · ");
-      const price = Number.isFinite(product?.priceGross)
-        ? `${money(product.priceGross, product.currency || "PLN")} brutto`
+      const offerCurrency = offerCcy();
+      const sourceCurrency = String(product?.currency || "PLN").toUpperCase();
+      const convertedGross = Number.isFinite(Number(product?.priceGross))
+        ? convertIaiGrossPriceToOfferCurrency(product?.priceGross, sourceCurrency)
+        : null;
+      const price = Number.isFinite(convertedGross)
+        ? (
+            sourceCurrency === offerCurrency
+              ? `${money(convertedGross, offerCurrency)} brutto`
+              : `${money(convertedGross, offerCurrency)} brutto (z ${money(product.priceGross, sourceCurrency)})`
+          )
         : "";
       const buyNet = Number.isFinite(Number(product?.buyNet)) &&
         product?.buyNet !== null &&
@@ -771,7 +954,7 @@ function ensureProductSearchModal() {
     _productSearchModalStatus.textContent = "Wyszukiwanie produktów w IdoSell…";
 
     try {
-      const result = await window.esusAPI?.idosellSearchProducts?.(query);
+      const result = await window.esusAPI?.idosellSearchProducts?.(query, offerCcy());
       if (!_productSearchModalEl || _productSearchModalEl.hidden) return;
 
       if (result?.ok) {
@@ -890,7 +1073,7 @@ async function quickSearchAndApplyProduct(i, query, buttonEl, { onTotalsChanged,
   buttonEl.disabled = true;
 
   try {
-    const result = await window.esusAPI?.idosellSearchProducts?.(q);
+    const result = await window.esusAPI?.idosellSearchProducts?.(q, offerCcy());
     const product = Array.isArray(result?.products) ? result.products[0] : null;
     if (!result?.ok || !product) return;
 
@@ -935,11 +1118,13 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
       it.warranty.lifetime = !!it.warranty.lifetime;
     }
     it.internalNote = String(it.internalNote || "");
+    it.alternatives = getItemAlternatives(it);
 
     const wMonths = Math.max(0, parseInt(it?.warranty?.months || 0, 10) || 0);
     const wNbd = !!it?.warranty?.nbd;
     const wLifetime = !!it?.warranty?.lifetime;
     const hasInternalNote = !!String(it?.internalNote || "").trim();
+    const alternatives = it.alternatives;
     const isIaiSynced = !!(it?.iaiSync && it.iaiSync.synced);
     const showIaiSyncWarnings = !!store.offer?.iaiSyncReviewRequested;
     const rowSyncClass = isIaiSynced
@@ -958,6 +1143,8 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
 
     const tr = document.createElement("tr");
     tr.className = rowSyncClass.trim();
+    tr.dataset.itemMain = "1";
+    tr.dataset.itemIndex = String(idx);
     tr.innerHTML = `
       <td>
         <div class="itemDescMeta" aria-hidden="true">
@@ -1042,6 +1229,26 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
             <input type="checkbox" data-k="warrantyNbd" data-i="${idx}" ${wNbd ? "checked" : ""} />
             NBD
           </label>
+
+          <div class="itemVariantsBlock" style="flex:1 1 100%;">
+            <div class="itemVariantsHead">
+              <div class="itemVariantsTitleWrap">
+                <div class="itemVariantsTitle">Warianty alternatywne</div>
+                <div class="itemVariantsHint">Suma oferty nadal liczy wariant g\u0142\u00f3wny z tego wiersza.</div>
+              </div>
+              <button
+                type="button"
+                class="btnTiny secondary itemVariantAddBtn"
+                data-alt-add="${idx}"
+              >
+                Dodaj wariant
+              </button>
+            </div>
+
+            <div class="itemVariantsList">
+              ${buildAlternativesMarkup(alternatives, idx, ccy)}
+            </div>
+          </div>
         </div>
       </td>
 
@@ -1101,11 +1308,36 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
     `;
 
     tbody.appendChild(tr);
+
+    const detailsTr = document.createElement("tr");
+    detailsTr.className = "itemDetailsRow";
+    detailsTr.dataset.itemDetails = "1";
+    detailsTr.dataset.itemIndex = String(idx);
+    detailsTr.hidden = true;
+    detailsTr.innerHTML = `<td colspan="7" class="itemDetailsCell"></td>`;
+
+    const detailsCell = detailsTr.querySelector(".itemDetailsCell");
+    const detailsPanel = tr.querySelector(`.itemDetailsWarranty[data-warranty="${idx}"]`);
+    if (detailsCell && detailsPanel) {
+      const variantBlock = detailsPanel.querySelector(".itemVariantsBlock");
+      const warrantyFields = document.createElement("div");
+      warrantyFields.className = "itemDetailsWarrantyFields";
+
+      Array.from(detailsPanel.children).forEach((child) => {
+        if (child === variantBlock) return;
+        warrantyFields.appendChild(child);
+      });
+
+      detailsPanel.removeAttribute("style");
+      variantBlock?.style.removeProperty("flex");
+      detailsPanel.insertBefore(warrantyFields, variantBlock || null);
+      detailsCell.appendChild(detailsPanel);
+    }
+
+    tbody.appendChild(detailsTr);
   });
 
-  tbody.querySelectorAll("tr").forEach((tr, idx) => {
-    tr.dataset.itemIndex = String(idx);
-
+  tbody.querySelectorAll('tr[data-item-main="1"]').forEach((tr) => {
     tr.addEventListener("dragover", (event) => {
       if (_dragItemIndex === null) return;
       event.preventDefault();
@@ -1181,8 +1413,24 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
       const i = parseInt(e.target.getAttribute("data-i"), 10);
       const k = e.target.getAttribute("data-k");
       if (!Number.isFinite(i) || !k) return;
+      const altIdx = parseInt(e.target.getAttribute("data-alt") || "-1", 10);
 
-      if (k === "warrantyMonths") {
+      if ((k === "altDesc" || k === "altNet" || k === "altDiscount" || k === "altQty") && Number.isFinite(altIdx) && altIdx >= 0) {
+        const nextAlternatives = getItemAlternatives(store.items[i]);
+        if (!nextAlternatives[altIdx]) return;
+
+        if (k === "altDesc") {
+          nextAlternatives[altIdx].desc = String(e.target.value || "");
+        } else if (k === "altQty") {
+          nextAlternatives[altIdx].qty = Math.max(1, parseInt(e.target.value || "1", 10) || 1);
+        } else if (k === "altDiscount") {
+          nextAlternatives[altIdx].discount = toNumber(e.target.value);
+        } else {
+          nextAlternatives[altIdx].net = toNumber(e.target.value);
+        }
+
+        updateItem(i, { alternatives: nextAlternatives });
+      } else if (k === "warrantyMonths") {
         const current = store.items[i]?.warranty || { months: 0, nbd: false, lifetime: false };
         if (current.lifetime) return;
 
@@ -1329,6 +1577,62 @@ export function renderItems({ onTotalsChanged, onStateChanged } = {}) {
     btn.addEventListener("blur", () => hideNoteTip());
   });
 
+  tbody.querySelectorAll("[data-alt-add]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.getAttribute("data-alt-add"), 10);
+      if (!Number.isFinite(idx) || !store.items[idx]) return;
+
+      const nextAlternatives = getItemAlternatives(store.items[idx]);
+      nextAlternatives.push({ desc: "", net: 0, discount: 0, qty: 1 });
+      updateItem(idx, { alternatives: nextAlternatives });
+
+      renderItems({ onTotalsChanged, onStateChanged });
+      setItemDetailsExpanded(idx, true);
+      onStateChanged?.();
+
+      requestAnimationFrame(() => {
+        const input = document.querySelector(`input[data-k="altDesc"][data-i="${idx}"][data-alt="${nextAlternatives.length - 1}"]`);
+        input?.focus();
+      });
+    });
+  });
+
+  tbody.querySelectorAll("[data-alt-del]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.getAttribute("data-alt-del"), 10);
+      const altIdx = parseInt(btn.getAttribute("data-alt-index") || "-1", 10);
+      if (!Number.isFinite(idx) || !Number.isFinite(altIdx) || !store.items[idx]) return;
+
+      const nextAlternatives = getItemAlternatives(store.items[idx]).filter((_entry, entryIdx) => entryIdx !== altIdx);
+      updateItem(idx, { alternatives: nextAlternatives });
+
+      renderItems({ onTotalsChanged, onStateChanged });
+      setItemDetailsExpanded(idx, true);
+      onStateChanged?.();
+    });
+  });
+
+  tbody.querySelectorAll("[data-alt-promote]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.getAttribute("data-alt-promote"), 10);
+      const altIdx = parseInt(btn.getAttribute("data-alt-index") || "-1", 10);
+      if (!Number.isFinite(idx) || !Number.isFinite(altIdx) || !store.items[idx]) return;
+
+      const nextPatch = buildPrimaryFromAlternative(store.items[idx], altIdx);
+      if (!nextPatch) return;
+
+      updateItem(idx, {
+        ...nextPatch,
+        ...buildSyncResetPatch(idx, nextPatch),
+      });
+
+      renderItems({ onTotalsChanged, onStateChanged });
+      setItemDetailsExpanded(idx, true);
+      onTotalsChanged?.();
+      onStateChanged?.();
+    });
+  });
+
   // ===== Delete =====
   tbody.querySelectorAll("[data-del]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1357,8 +1661,9 @@ export function recalcAllRowsUI() {
   const tbody = el("itemsBody");
   if (!tbody) return;
 
-  const rows = Array.from(tbody.querySelectorAll("tr"));
-  rows.forEach((tr, idx) => {
+  const rows = Array.from(tbody.querySelectorAll('tr[data-item-main="1"]'));
+  rows.forEach((tr) => {
+    const idx = parseInt(tr.dataset.itemIndex || "-1", 10);
     const it = store.items[idx];
     if (!it) return;
     updateRowCalcUI(tr, it);

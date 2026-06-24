@@ -26,6 +26,7 @@ import {
 import { fetchExchangeRates, loadCachedExchangeRates } from "./utils/exchangeRates.js";
 import { setExchange } from "./state/store.js";
 import { changeOfferCurrency } from "./utils/offerCurrency.js";
+import { syncShippingFormUi } from "./utils/shipping.js";
 import { itemNetAfterDiscount } from "./calc/pricing.js";
 
 import {
@@ -207,6 +208,14 @@ function normalizeItem(it = {}) {
   const lifetime = !!w.lifetime;
   const months = lifetime ? 0 : Math.max(0, parseInt(w.months ?? 0, 10) || 0);
   const nbd = !!w.nbd;
+  const alternatives = Array.isArray(it?.alternatives)
+    ? it.alternatives.map((entry) => ({
+        desc: String(entry?.desc ?? ""),
+        net: Number(entry?.net ?? 0),
+        discount: Number(entry?.discount ?? 0),
+        qty: Math.max(1, parseInt(entry?.qty ?? 1, 10) || 1),
+      }))
+    : [];
   const iaiSync = it?.iaiSync && typeof it.iaiSync === "object"
     ? {
         provider: String(it.iaiSync.provider || "idosell"),
@@ -231,6 +240,7 @@ function normalizeItem(it = {}) {
     qty: Math.max(1, parseInt(it.qty ?? 1, 10) || 1),
     warranty: { months, nbd, lifetime },
     internalNote: String(it.internalNote ?? ""),
+    alternatives,
     iaiSync,
   };
 }
@@ -661,18 +671,15 @@ function wireOfferNumberControls() {
 function wireTermsUi() {
   const pm = el("paymentMethod");
   const wrap = el("invoiceDaysWrap");
-  const shipNet = el("shippingNet");
-  const shipNote = el("shippingNote");
+  const shipAmount = el("shippingAmount");
+  const shipModeGross = el("shippingModeGross");
   const validUntil = el("validUntil");
 
   const refresh = () => {
     if (pm && wrap) {
       wrap.style.display = pm.value === "invoice" ? "block" : "none";
     }
-    if (shipNet && shipNote) {
-      const v = Number(shipNet.value || 0);
-      shipNote.style.display = v === 0 ? "block" : "none";
-    }
+    syncShippingFormUi();
     refreshValidUntilWarning();
   };
 
@@ -680,8 +687,14 @@ function wireTermsUi() {
     refresh();
     scheduleAutosave(autosaveActiveOffer);
   });
-  shipNet?.addEventListener("input", () => {
+  shipAmount?.addEventListener("input", () => {
     refresh();
+    recalcTotalsUI();
+    scheduleAutosave(autosaveActiveOffer);
+  });
+  shipModeGross?.addEventListener("change", () => {
+    refresh();
+    recalcTotalsUI();
     scheduleAutosave(autosaveActiveOffer);
   });
   validUntil?.addEventListener("input", refresh);
@@ -789,12 +802,15 @@ function refreshValidUntilWarning() {
 
 function clearFormFieldsForNewOffer() {
   const ids = [
+    "offerStatus",
     "custName",
     "custNip",
     "custAddr",
     "custContact",
     "termsExtra",       
     "creatorNotes",
+    "shippingAmount",
+    "shippingModeGross",
     "shippingNet",
     "shippingNote",
     "estimateDays",
@@ -805,6 +821,7 @@ function clearFormFieldsForNewOffer() {
     if (!node) return;
 
     if (node.type === "checkbox") node.checked = false;
+    else if (id === "offerStatus") node.value = "nowa";
     else node.value = "";
 
     try {
@@ -916,10 +933,13 @@ async function init() {
         renderOfferVersionInfo(p);
 
         const fields = p?.fields || {};
-        ["custName", "custNip", "custAddr", "custContact"].forEach((id) => {
+        ["offerStatus", "custName", "custNip", "custAddr", "custContact"].forEach((id) => {
           const node = formEl(id);
           if (node) node.value = "";
         });
+
+        const offerStatusNode = formEl("offerStatus");
+        if (offerStatusNode) offerStatusNode.value = "nowa";
 
         Object.keys(fields).forEach((id) => {
           const node = formEl(id);
@@ -1071,7 +1091,7 @@ function initUpdateToasts() {
       type: "info",
       ms: 15000,
       actionLabel: "Pobierz",
-      secondaryLabel: "PĂłĹşniej",
+      secondaryLabel: "P\u00f3\u017aniej",
       onSecondary: async () => {},
       keepOpenOnAction: true,
       onAction: async () => {
@@ -1132,7 +1152,7 @@ function initUpdateToasts() {
           type: "info",
           ms: 0,
           actionLabel: "Uruchom ponownie",
-          secondaryLabel: "PĂłĹşniej",
+          secondaryLabel: "P\u00f3\u017aniej",
           onSecondary: async () => {},
           onAction: async () => window.esusAPI.updateQuitAndInstall(),
         });

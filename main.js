@@ -1352,7 +1352,64 @@ function toFiniteNumber(value) {
   return Number.isFinite(num) ? num : null;
 }
 
-function mapIdoSellProductCandidate(candidate) {
+function hasAnyPreferredShopPrice(entry) {
+  return [
+    entry?.productRetailPrice,
+    entry?.priceGross,
+    entry?.grossPrice,
+    entry?.productMinimalPrice,
+    entry?.minimalPrice,
+    entry?.minimumPrice,
+    entry?.productMinimalNetPrice,
+    entry?.minimalNetPrice,
+    entry?.minimumNetPrice,
+    entry?.priceNetMinimal,
+    entry?.purchasePriceNet,
+    entry?.productPurchasePriceNet,
+    entry?.wholesalePriceNet,
+  ].some((value) => toFiniteNumber(value) !== null);
+}
+
+function pickPreferredShopEntry(entries, requestedCurrency, topLevelCurrency) {
+  const normalizedRequestedCurrency = String(requestedCurrency || "").trim().toUpperCase();
+  const normalizedTopLevelCurrency = String(topLevelCurrency || "").trim().toUpperCase();
+
+  const withPrice = entries.filter((entry) => hasAnyPreferredShopPrice(entry));
+  const byCurrency = (list, currency) =>
+    list.find((entry) => String(entry?.currencyId || "").trim().toUpperCase() === currency) || null;
+
+  return (
+    (normalizedRequestedCurrency ? byCurrency(withPrice, normalizedRequestedCurrency) : null) ||
+    (normalizedRequestedCurrency ? byCurrency(entries, normalizedRequestedCurrency) : null) ||
+    (normalizedTopLevelCurrency ? byCurrency(withPrice, normalizedTopLevelCurrency) : null) ||
+    (normalizedTopLevelCurrency ? byCurrency(entries, normalizedTopLevelCurrency) : null) ||
+    withPrice.find((entry) => Number(entry?.shopId) === 1) ||
+    entries.find((entry) => Number(entry?.shopId) === 1) ||
+    withPrice[0] ||
+    entries[0] ||
+    null
+  );
+}
+
+function collectIdoSellShopPriceEntries(candidate) {
+  const arrays = [
+    candidate?.productShopsPrices,
+    candidate?.productShopPrices,
+    candidate?.shopsPrices,
+    candidate?.shopPrices,
+    candidate?.productPricesByShop,
+  ];
+
+  for (const value of arrays) {
+    if (Array.isArray(value) && value.length) {
+      return value.filter((entry) => entry && typeof entry === "object");
+    }
+  }
+
+  return [];
+}
+
+function mapIdoSellProductCandidate(candidate, preferredCurrency = "PLN") {
   if (!candidate || typeof candidate !== "object") return null;
 
   const descriptions = Array.isArray(candidate?.productDescriptionsLangData)
@@ -1373,12 +1430,18 @@ function mapIdoSellProductCandidate(candidate) {
   const shopAttributes = Array.isArray(candidate?.productShopsAttributes)
     ? candidate.productShopsAttributes
     : [];
+  const shopPriceEntries = collectIdoSellShopPriceEntries(candidate);
   const topLevelCurrency = String(candidate?.currencyId || candidate?.currency || "PLN").trim().toUpperCase();
-  const preferredShopAttributes =
-    shopAttributes.find((entry) => Number(entry?.shopId) === 1) ||
-    shopAttributes.find((entry) => String(entry?.currencyId || "").trim().toUpperCase() === topLevelCurrency) ||
-    shopAttributes[0] ||
-    null;
+  const preferredShopPriceEntry = pickPreferredShopEntry(
+    shopPriceEntries,
+    preferredCurrency,
+    topLevelCurrency
+  );
+  const preferredShopAttributes = pickPreferredShopEntry(
+    shopAttributes,
+    preferredCurrency,
+    topLevelCurrency
+  );
 
   const id = String(
     pickFirstValue(candidate, [
@@ -1443,6 +1506,11 @@ function mapIdoSellProductCandidate(candidate) {
 
   const priceGross =
     toFiniteNumber(
+      preferredShopPriceEntry?.productRetailPrice ??
+      preferredShopPriceEntry?.priceGross ??
+      preferredShopPriceEntry?.grossPrice
+    ) ??
+    toFiniteNumber(
       preferredShopAttributes?.productRetailPrice ??
       preferredShopAttributes?.priceGross ??
       preferredShopAttributes?.grossPrice
@@ -1461,6 +1529,11 @@ function mapIdoSellProductCandidate(candidate) {
     toFiniteNumber(candidate?.productPriceData?.priceGross);
 
   const buyMinimalGross =
+    toFiniteNumber(
+      preferredShopPriceEntry?.productMinimalPrice ??
+      preferredShopPriceEntry?.minimalPrice ??
+      preferredShopPriceEntry?.minimumPrice
+    ) ??
     toFiniteNumber(
       preferredShopAttributes?.productMinimalPrice ??
       preferredShopAttributes?.minimalPrice ??
@@ -1498,6 +1571,15 @@ function mapIdoSellProductCandidate(candidate) {
   const vatMultiplier = vatPercent > 0 ? 1 + vatPercent / 100 : 1;
 
   const buyNet =
+    toFiniteNumber(
+      preferredShopPriceEntry?.productMinimalNetPrice ??
+      preferredShopPriceEntry?.minimalNetPrice ??
+      preferredShopPriceEntry?.minimumNetPrice ??
+      preferredShopPriceEntry?.priceNetMinimal ??
+      preferredShopPriceEntry?.purchasePriceNet ??
+      preferredShopPriceEntry?.productPurchasePriceNet ??
+      preferredShopPriceEntry?.wholesalePriceNet
+    ) ??
     toFiniteNumber(
       preferredShopAttributes?.productMinimalNetPrice ??
       preferredShopAttributes?.minimalNetPrice ??
@@ -1537,6 +1619,7 @@ function mapIdoSellProductCandidate(candidate) {
       : null);
 
   const currency = String(
+    preferredShopPriceEntry?.currencyId ||
     preferredShopAttributes?.currencyId ||
     pickFirstValue(candidate, [
       "currency",
@@ -1596,13 +1679,13 @@ function scoreIdoSellProductResult(product, query) {
   return score;
 }
 
-function pickIdoSellProductsFromPayload(payload, query) {
+function pickIdoSellProductsFromPayload(payload, query, preferredCurrency = "PLN") {
   const mapped = [];
   const seen = new Set();
   const candidates = Array.isArray(payload?.results) ? payload.results : collectObjectsDeep(payload);
 
   for (const candidate of candidates) {
-    const product = mapIdoSellProductCandidate(candidate);
+    const product = mapIdoSellProductCandidate(candidate, preferredCurrency);
     if (!product) continue;
 
     const key = `${product.id}::${product.code || ""}`;
@@ -1622,14 +1705,15 @@ function pickIdoSellProductsFromPayload(payload, query) {
     .slice(0, 12);
 }
 
-async function searchIdoSellProducts(query) {
+async function searchIdoSellProducts(query, preferredCurrency = "PLN") {
   const q = String(query || "").trim();
+  const requestedCurrency = "PLN";
   if (q.length < 2) {
     return { ok: false, message: "Wpisz co najmniej 2 znaki indeksu.", products: [] };
   }
 
   const normalizedIndex = q.replace(/\s+/g, "").trim();
-  const cacheKey = `${IDOSELL_PRODUCT_SEARCH_CACHE_VERSION}:${normalizeSearchText(normalizedIndex)}`;
+  const cacheKey = `${IDOSELL_PRODUCT_SEARCH_CACHE_VERSION}:${requestedCurrency}:${normalizeSearchText(normalizedIndex)}`;
   const cached = idosellProductSearchCache.get(cacheKey);
   if (cached && Date.now() - cached.at < 5 * 60 * 1000) {
     return { ok: true, products: cached.products, cached: true };
@@ -1670,7 +1754,7 @@ async function searchIdoSellProducts(query) {
         continue;
       }
 
-      const products = pickIdoSellProductsFromPayload(json, normalizedIndex);
+      const products = pickIdoSellProductsFromPayload(json, normalizedIndex, requestedCurrency);
       if (!products.length) {
         lastError = "Nie znaleziono produktów dla podanego zapytania.";
         continue;
@@ -2119,8 +2203,11 @@ ipcMain.handle("clients:deleteByNip", async (_evt, nip) => {
   return deleteClientByNip(String(nip || ""));
 });
 
-ipcMain.handle("idosell:searchProducts", async (_evt, query) => {
-  return await searchIdoSellProducts(String(query || ""));
+ipcMain.handle("idosell:searchProducts", async (_evt, payload) => {
+  const query = typeof payload === "object" && payload !== null ? payload.query : payload;
+  const preferredCurrency =
+    typeof payload === "object" && payload !== null ? payload.preferredCurrency : "PLN";
+  return await searchIdoSellProducts(String(query || ""), String(preferredCurrency || "PLN"));
 });
 
 // ===== IPC: offers CRUD =====

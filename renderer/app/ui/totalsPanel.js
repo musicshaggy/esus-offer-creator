@@ -3,6 +3,7 @@ import { store } from "../state/store.js";
 import { itemNetAfterDiscount } from "../calc/pricing.js";
 import { getVatRateFromUI, getVatFromUI } from "../utils/vat.js";
 import { toPLN, fromPLN } from "../utils/currency.js";
+import { syncShippingFormUi } from "../utils/shipping.js";
 
 let totals = {
   revenueNet: 0,
@@ -169,7 +170,8 @@ export function recalcTotalsUI() {
   setText("sumVatLabel", `Suma VAT ${vat.label}`);
 
   const offerCcy = String(store.offer?.ccy || store.settings?.offerCcy || "PLN").toUpperCase();
-  setText("shippingNetLabel", `Koszt wysyłki NETTO (${offerCcy})`);
+  syncShippingFormUi();
+  setText("shippingNetLabel", `Koszt wysy\u0142ki (${offerCcy})`);
 
   // 1) Sprzedaż (offerCcy) + VAT w walucie oferty
   let revenueOffer = 0;
