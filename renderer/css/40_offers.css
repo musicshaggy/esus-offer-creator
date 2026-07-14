@@ -3,7 +3,10 @@
 .page.is-active { display:block; }
 
 #offersPage{
+  display:flex;
+  flex-direction:column;
   height:calc(100vh - var(--titlebar-h, 32px) - var(--app-header-h, 82px));
+  min-height:calc(100vh - var(--titlebar-h, 32px) - var(--app-header-h, 82px));
   background:#0b0f14; /* solid */
   color:#e8eef7;
   overflow:hidden !important;
@@ -11,10 +14,13 @@
 .offers-shell{
   display:flex;
   flex-direction:column;
-  max-width:1200px;
+  flex:1 1 auto;
+  width:100%;
+  max-width:1180px;
+  min-height:0;
   height:100%;
   margin:0 auto;
-  padding:20px 18px 28px;
+  padding:18px 20px 20px;
   overflow:hidden !important;
 }
 .offers-header{
@@ -45,7 +51,6 @@
   flex:1 1 auto;
   min-height:0;
   height:100%;
-  margin-top:14px;
   border-radius:14px;
   background:#0f1620;
   border:1px solid rgba(255,255,255,0.08);
@@ -59,6 +64,7 @@
 .offers-subview.is-active{
   display:flex;
   flex-direction:column;
+  height:100%;
 }
 .offers-table-wrap{
   flex:1 1 auto;
@@ -182,6 +188,23 @@
   font-weight: 700;
 }
 
+.header-actions-offers{
+  display:flex;
+  gap:10px;
+  flex-wrap:nowrap;
+  justify-content:flex-end;
+  align-items:center;
+  flex:1 1 auto;
+  min-width:0;
+}
+
+.header-actions-offers #offersSearch{
+  flex:1 1 220px;
+  min-width:180px;
+  max-width:260px;
+  height:38px;
+}
+
 /* Na wąskich ekranach separator nie ma sensu */
 @media (max-width: 720px) {
   .header-actions-sep {
@@ -200,6 +223,7 @@ button i.fa-solid {
   height: 42px;
   padding: 0;
   justify-content: center;
+  align-self:center;
   border-radius: 12px;
   border: none !important;
   background: transparent !important;
@@ -1060,6 +1084,763 @@ td { position: relative; }
 @keyframes appToastIn{
   from{ opacity:0; transform: translate(-50%, 6px); }
   to  { opacity:1; transform: translate(-50%, 0); }
+}
+
+.iaiOrdersShell{
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+  width:100%;
+}
+
+.iaiOrdersHero,
+.iaiOrdersPanel,
+.iaiOrdersPreviewCard,
+.iaiOrdersDetailCard{
+  border:1px solid rgba(255,255,255,.08);
+  background:
+    radial-gradient(900px 320px at 0% 0%, rgba(0,154,255,.06), transparent 52%),
+    rgba(255,255,255,.025);
+  box-shadow:0 18px 36px rgba(5,10,22,.18);
+}
+
+.iaiOrdersHero{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:16px;
+  padding:18px 20px;
+  border-radius:22px;
+}
+
+.iaiOrdersHeroMain{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  min-width:0;
+  flex:1 1 auto;
+}
+
+.iaiOrdersHero h2{
+  margin:2px 0 0;
+  font-size:26px;
+  font-weight:800;
+}
+
+.iaiOrdersHero p{
+  margin:0;
+  max-width:640px;
+  color:rgba(232,238,247,.76);
+  line-height:1.45;
+  font-size:14px;
+}
+
+.iaiOrdersHeroSide{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  min-width:240px;
+}
+
+.iaiOrdersLangPicker{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-width:220px;
+}
+
+.iaiOrdersLangPicker span{
+  font-size:11px;
+  font-weight:700;
+  color:rgba(232,238,247,.74);
+}
+
+.iaiOrdersLangPicker select{
+  height:38px;
+  border-radius:14px;
+  background:#0b111a;
+  border:1px solid rgba(255,255,255,.10);
+  color:#e8eef7;
+}
+
+.iaiOrdersPanel{
+  padding:14px 16px 16px;
+  border-radius:18px;
+}
+
+.iaiOrdersPanelHead{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+
+.iaiOrdersPanelHead h3{
+  margin:0;
+  font-size:16px;
+  font-weight:800;
+}
+
+.iaiOrdersActions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  flex:0 0 auto;
+}
+
+.iaiOrdersLookupInline{
+  margin-top:10px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.iaiOrdersLookupBox{
+  min-width:0;
+  flex:0 1 440px;
+  max-width:440px;
+}
+
+.iaiOrdersLookupBox textarea{
+  width:100%;
+  height:40px;
+  min-height:40px;
+  max-height:40px;
+  resize:none;
+  padding:9px 13px;
+  border-radius:11px;
+  background:#0b111a;
+  border:1px solid rgba(255,255,255,.1);
+  color:#e8eef7;
+  line-height:20px;
+  overflow:hidden;
+}
+
+.iaiOrdersLookupBox textarea:focus{
+  border-color:rgba(0,154,255,.65);
+  box-shadow:0 0 0 3px rgba(0,154,255,.18);
+  outline:none;
+}
+
+.iaiOrdersIconButton{
+  width:40px;
+  min-width:40px;
+  height:40px;
+  padding:0;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  line-height:1;
+}
+
+.iaiOrdersIconButton > i.fa-solid,
+.iaiOrdersDocAction > i.fa-solid{
+  display:block;
+  width:1em;
+  height:1em;
+  line-height:1;
+  margin:0 !important;
+  text-align:center;
+}
+
+.iaiOrdersSearchButton{
+  height:40px;
+  min-width:max-content;
+  padding:0 15px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+}
+
+.iaiOrdersEmptyState{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:center;
+  gap:10px;
+  min-height:220px;
+  padding:26px 28px;
+  border-radius:20px;
+  border:1px dashed rgba(255,255,255,.12);
+  background:
+    radial-gradient(800px 320px at 0% 0%, rgba(0,154,255,.08), transparent 55%),
+    rgba(255,255,255,.02);
+}
+
+.iaiOrdersEmptyState h3{
+  margin:0;
+  font-size:22px;
+  font-weight:800;
+}
+
+.iaiOrdersEmptyState p{
+  margin:0;
+  max-width:680px;
+  color:rgba(232,238,247,.72);
+  line-height:1.55;
+}
+
+.iaiOrdersTable .row-actions{
+  justify-content:flex-end;
+  align-items:center;
+  flex-wrap:nowrap;
+  gap:6px;
+}
+
+.iaiOrdersTable{
+  table-layout:fixed;
+}
+
+.iaiOrdersTable th,
+.iaiOrdersTable td{
+  min-width:0;
+}
+
+.iaiOrdersTable .iaiOrdersColSerial{
+  width:64px;
+}
+
+.iaiOrdersTable .iaiOrdersColOrder{
+  width:auto;
+}
+
+.iaiOrdersTable .iaiOrdersColStatus{
+  width:150px;
+}
+
+.iaiOrdersTable .iaiOrdersColDate{
+  width:132px;
+}
+
+.iaiOrdersTable .iaiOrdersColValue{
+  width:122px;
+}
+
+.iaiOrdersTable .iaiOrdersColActions{
+  width:250px;
+}
+
+.iaiOrdersTable td:nth-child(2) .iaiOrdersPrimary,
+.iaiOrdersTable td:nth-child(2) .iaiOrdersSecondary{
+  overflow-wrap:anywhere;
+}
+
+.sr-only{
+  position:absolute;
+  width:1px;
+  height:1px;
+  padding:0;
+  margin:-1px;
+  overflow:hidden;
+  clip:rect(0,0,0,0);
+  white-space:nowrap;
+  border:0;
+}
+
+.iaiOrdersDocPicker{
+  display:flex;
+  align-items:center;
+  min-width:0;
+}
+
+.iaiOrdersDocSelect{
+  height:32px;
+  width:126px;
+  min-width:0;
+  padding:0 28px 0 9px;
+  border-radius:10px;
+  background:#0b111a;
+  border:1px solid rgba(255,255,255,.10);
+  color:#e8eef7;
+  font:inherit;
+  font-size:12px;
+}
+
+.iaiOrdersDocSelect:focus{
+  border-color:rgba(0,154,255,.65);
+  box-shadow:0 0 0 3px rgba(0,154,255,.18);
+  outline:none;
+}
+
+.iaiOrdersModalActions .iaiOrdersDocSelect{
+  width:180px;
+  height:36px;
+  padding-left:12px;
+}
+
+.iaiOrdersDocAction{
+  width:34px;
+  min-width:34px;
+  padding:0;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  line-height:1;
+}
+
+.iaiOrdersRow--closed td{
+  background:rgba(255,255,255,.015);
+}
+
+.iaiOrdersPrimary{
+  font-weight:800;
+  color:#f5f7fb;
+}
+
+.iaiOrdersSecondary{
+  margin-top:4px;
+  color:rgba(232,238,247,.66);
+  font-size:12px;
+}
+
+.iaiOrdersStatus{
+  display:inline-flex;
+  align-items:center;
+  min-height:28px;
+  padding:0 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.1);
+  background:rgba(255,255,255,.04);
+  font-size:12px;
+  font-weight:800;
+}
+
+.iaiOrdersStatus--info{
+  color:#9fd4ff;
+  border-color:rgba(56,189,248,.25);
+  background:rgba(56,189,248,.1);
+}
+
+.iaiOrdersStatus--warning{
+  color:#ffd889;
+  border-color:rgba(245,158,11,.28);
+  background:rgba(245,158,11,.12);
+}
+
+.iaiOrdersStatus--accent{
+  color:#cdbaff;
+  border-color:rgba(168,85,247,.3);
+  background:rgba(168,85,247,.12);
+}
+
+.iaiOrdersStatus--success{
+  color:#8ef0b5;
+  border-color:rgba(34,197,94,.3);
+  background:rgba(34,197,94,.12);
+}
+
+.iaiOrdersStatus--muted{
+  color:#ffd7a0;
+  border-color:rgba(245,158,11,.25);
+  background:rgba(245,158,11,.1);
+}
+
+.iaiOrdersStatus--default{
+  color:#dbe5f5;
+  border-color:rgba(255,255,255,.14);
+  background:rgba(255,255,255,.05);
+}
+
+.iaiOrdersModalBackdrop{
+  position:fixed;
+  inset:0;
+  z-index:95000;
+  background:rgba(3,7,18,.82);
+  padding:24px;
+  overflow:auto;
+  align-items:flex-start;
+  justify-content:center;
+}
+
+.iaiOrdersModalCard{
+  max-width:1180px;
+  margin:0 auto;
+  border-radius:24px;
+  padding:20px;
+  position:relative;
+  z-index:1;
+  width:min(1180px, 100%);
+  border:1px solid rgba(255,255,255,.12);
+  background:
+    linear-gradient(180deg, rgba(15,22,34,.985), rgba(11,16,26,.995)),
+    #0d1420;
+  box-shadow:
+    0 32px 90px rgba(0,0,0,.56),
+    0 0 0 1px rgba(255,255,255,.04) inset;
+  backdrop-filter:none;
+}
+
+body.iai-orders-modal-open{
+  overflow:hidden;
+}
+
+.iaiOrdersModalHead{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  margin-bottom:18px;
+}
+
+.iaiOrdersModalHead h3{
+  margin:8px 0 0;
+  font-size:26px;
+  font-weight:800;
+}
+
+.iaiOrdersModalActions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  align-items:center;
+}
+
+.iaiOrdersModalBody{
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+}
+
+.iaiOrdersSerialPromptBackdrop{
+  position:fixed;
+  inset:0;
+  z-index:96000;
+  padding:24px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(3,7,18,.82);
+}
+
+.iaiOrdersSerialPromptCard{
+  width:min(620px, 100%);
+  max-height:calc(100vh - 48px);
+  overflow:auto;
+  padding:18px;
+  border-radius:20px;
+  border:1px solid rgba(255,255,255,.12);
+  background:#0d1420;
+  box-shadow:0 28px 80px rgba(0,0,0,.52);
+}
+
+.iaiOrdersSerialPromptHead{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+}
+
+.iaiOrdersSerialPromptHead h3{
+  margin:7px 0 4px;
+  font-size:21px;
+}
+
+.iaiOrdersSerialPromptHead p{
+  margin:0;
+  color:rgba(232,238,247,.68);
+  font-size:13px;
+}
+
+.iaiOrdersSerialPromptBody{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-top:16px;
+}
+
+.iaiOrdersSerialPromptRow{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(190px, .8fr);
+  align-items:center;
+  gap:12px;
+  padding:10px 12px;
+  border-radius:13px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.025);
+}
+
+.iaiOrdersSerialPromptProduct{
+  min-width:0;
+}
+
+.iaiOrdersSerialPromptProduct strong,
+.iaiOrdersSerialPromptProduct span{
+  display:block;
+  overflow-wrap:anywhere;
+}
+
+.iaiOrdersSerialPromptProduct span{
+  margin-top:3px;
+  color:rgba(232,238,247,.58);
+  font-size:11px;
+}
+
+.iaiOrdersSerialPromptInput{
+  width:100%;
+  min-height:54px;
+  resize:vertical;
+  padding:8px 10px;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,.1);
+  background:#0a1018;
+  color:#e8eef7;
+  font:inherit;
+  line-height:1.35;
+}
+
+.iaiOrdersSerialPromptInput:focus{
+  outline:none;
+  border-color:rgba(0,154,255,.65);
+  box-shadow:0 0 0 3px rgba(0,154,255,.16);
+}
+
+.iaiOrdersSerialPromptActions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  margin-top:16px;
+}
+
+.iaiOrdersPreviewGrid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:14px;
+}
+
+.iaiOrdersPreviewCard{
+  padding:16px 18px;
+  border-radius:18px;
+}
+
+.iaiOrdersPreviewCard strong{
+  display:block;
+  margin-top:4px;
+  font-size:22px;
+  font-weight:800;
+}
+
+.iaiOrdersPreviewLabel{
+  color:rgba(232,238,247,.62);
+  font-size:12px;
+  font-weight:700;
+}
+
+.iaiOrdersPreviewMeta{
+  margin-top:6px;
+  color:rgba(232,238,247,.66);
+  font-size:12px;
+}
+
+.iaiOrdersDetailsGrid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+
+.iaiOrdersDetailCard{
+  padding:18px;
+  border-radius:18px;
+}
+
+.iaiOrdersDetailCard h4{
+  margin:0 0 12px;
+  font-size:16px;
+  font-weight:800;
+}
+
+.iaiOrdersDetailCard p{
+  margin:0 0 8px;
+  line-height:1.5;
+}
+
+.iaiOrdersSectionHead{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:14px;
+}
+
+.iaiOrdersSectionHead span{
+  color:rgba(232,238,247,.64);
+  font-size:12px;
+  font-weight:700;
+}
+
+.iaiOrdersProductsWrap{
+  overflow:auto;
+}
+
+.iaiOrdersProductsTable{
+  width:100%;
+  table-layout:fixed;
+  border-collapse:separate;
+  border-spacing:0;
+}
+
+.iaiOrdersProductsTable th,
+.iaiOrdersProductsTable td{
+  min-width:0;
+  padding:9px 8px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  vertical-align:top;
+}
+
+.iaiOrdersProductsTable .iaiOrdersProductColLp{
+  width:42px;
+}
+
+.iaiOrdersProductsTable .iaiOrdersProductColSerials{
+  width:210px;
+}
+
+.iaiOrdersProductsTable .iaiOrdersProductColQty{
+  width:62px;
+}
+
+.iaiOrdersProductsTable .iaiOrdersProductColPrice{
+  width:104px;
+}
+
+.iaiOrdersProductsTable td:nth-child(2) .iaiOrdersPrimary,
+.iaiOrdersProductsTable td:nth-child(2) .iaiOrdersSecondary{
+  overflow-wrap:anywhere;
+}
+
+.iaiOrdersProductsTable th{
+  text-align:left;
+  color:rgba(232,238,247,.76);
+  background:rgba(255,255,255,.04);
+}
+
+.iaiOrdersProductsTable .right{
+  text-align:right;
+}
+
+.iaiOrdersSerialsInput{
+  width:100%;
+  min-height:58px;
+  resize:vertical;
+  padding:8px 9px;
+  border-radius:10px;
+  background:#0b111a;
+  border:1px solid rgba(255,255,255,.1);
+  color:#e8eef7;
+  font:inherit;
+  line-height:1.45;
+}
+
+.iaiOrdersSerialsInput:focus{
+  border-color:rgba(0,154,255,.65);
+  box-shadow:0 0 0 3px rgba(0,154,255,.18);
+  outline:none;
+}
+
+.iaiOrdersSerialsHelp{
+  margin-top:6px;
+  color:rgba(232,238,247,.58);
+  font-size:11px;
+  line-height:1.4;
+}
+
+.iaiOrdersRawDetails{
+  margin-top:14px;
+}
+
+.iaiOrdersRawDetails summary{
+  cursor:pointer;
+  font-weight:800;
+}
+
+.iaiOrdersRawDetails pre{
+  margin:12px 0 0;
+  padding:14px;
+  border-radius:14px;
+  background:#0a1018;
+  border:1px solid rgba(255,255,255,.08);
+  color:#dce8fb;
+  overflow:auto;
+  font-size:12px;
+  line-height:1.45;
+}
+
+@media (max-width: 1320px){
+  .actions{
+    flex-wrap:wrap;
+    justify-content:flex-end;
+  }
+
+  .header-actions-offers{
+    flex-wrap:wrap;
+    justify-content:flex-end;
+  }
+
+  .header-actions-offers #offersSearch{
+    flex:1 1 100%;
+    max-width:none;
+    order:10;
+  }
+}
+
+@media (max-width: 1100px){
+  .iaiOrdersHero,
+  .iaiOrdersModalHead{
+    flex-direction:column;
+  }
+
+  .iaiOrdersHeroSide,
+  .iaiOrdersPreviewGrid,
+  .iaiOrdersDetailsGrid{
+    grid-template-columns:1fr;
+    min-width:0;
+  }
+
+  .iaiOrdersTable .iaiOrdersColStatus{
+    width:132px;
+  }
+
+  .iaiOrdersTable .iaiOrdersColDate{
+    width:116px;
+  }
+
+  .iaiOrdersTable .iaiOrdersColActions{
+    width:238px;
+  }
+
+  .iaiOrdersDocSelect{
+    width:112px;
+  }
+
+  .header-actions-offers{
+    justify-content:flex-start;
+  }
+
+  .header-actions-offers #offersSearch{
+    max-width:none;
+    width:100%;
+  }
+}
+
+@media (max-width: 720px){
+  .iaiOrdersLookupInline{
+    flex-wrap:wrap;
+  }
+
+  .iaiOrdersLookupBox{
+    flex:1 1 100%;
+  }
+
+  .iaiOrdersSearchButton{
+    flex:1 1 auto;
+  }
+
+  .iaiOrdersSerialPromptRow{
+    grid-template-columns:1fr;
+  }
 }
 
 /* ===== Item details (warranty) – subtelny toggle ===== */

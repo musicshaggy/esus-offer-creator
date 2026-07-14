@@ -40,7 +40,7 @@
     </div>
 
     <div class="actions">
-      <div id="headerActionsMain" class="header-actions-main">
+      <div id="headerActionsMain" class="header-actions-main" style="display:none;">
 	  <!-- NAV (przełączanie kontekstu) -->
 	  <div class="header-actions-nav">
 		<button id="btnOffers" class="secondary">
@@ -74,9 +74,9 @@
 	</div>
 
 
-      <div id="headerActionsOffers" style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; align-items:center;">
+      <div id="headerActionsOffers" class="header-actions-offers">
         <span class="pill" title="Liczba ofert">Liczba ofert: <b id="offersCount">0</b></span>
-        <input id="offersSearch" type="text" placeholder="Szukaj: numer, klient, status…" style="width:min(360px,48vw); height:38px;" />
+        <input id="offersSearch" type="text" placeholder="Szukaj: numer, klient, status…" />
         <button id="btnOffersNew" class="secondary">
 		  <i class="fa-solid fa-file-circle-plus"></i>
 		  Nowa oferta
@@ -84,6 +84,10 @@
         <button id="btnOffersRefresh" class="secondary">
 		  <i class="fa-solid fa-chart-column"></i>
 		  Raport PM
+		</button>
+        <button id="btnOffersIaiOrders" class="secondary" disabled title="Najpierw skonfiguruj integrację IdoSell.">
+		  <i class="fa-solid fa-basket-shopping"></i>
+		  Otwórz zamówienie IAI
 		</button>
         <button id="btnOffersReportBack" class="secondary" style="display:none;">
 		  <i class="fa-solid fa-arrow-left"></i>
@@ -843,6 +847,121 @@
             </button>
           </div>
         </div>
+
+        <div id="offersIaiOrdersView" class="offers-subview offers-report-view">
+          <div class="iaiOrdersShell">
+            <section class="iaiOrdersHero">
+              <div class="iaiOrdersHeroMain">
+                <div id="iaiOrdersHeroEyebrow" class="pmReportEyebrow">Moduł IdoSell</div>
+                <h2 id="iaiOrdersHeroTitle">Otwórz zamówienie IAI</h2>
+                <p id="iaiOrdersHeroText">Przeglądaj aktywne zamówienia z IdoSell, dołącz konkretne ID z ręcznego wyszukania i generuj robocze WZ do druku.</p>
+              </div>
+              <div class="iaiOrdersHeroSide">
+                <label class="iaiOrdersLangPicker" for="iaiOrdersLangSelect">
+                  <span id="iaiOrdersLangLabel">Język modułu</span>
+                  <select id="iaiOrdersLangSelect">
+                    <option value="pl">Polski</option>
+                    <option value="de">Deutsch</option>
+                    <option value="en">English</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section class="iaiOrdersPanel">
+              <div class="iaiOrdersPanelHead">
+                <h3 id="iaiOrdersPanelTitle">Lista zamówień</h3>
+              </div>
+
+              <div class="iaiOrdersLookupInline">
+                <div class="iaiOrdersLookupBox">
+                  <label id="iaiOrdersLookupLabel" class="sr-only" for="iaiOrdersLookup">ID lub numery seryjne zamówień do dołączenia</label>
+                  <textarea id="iaiOrdersLookup" rows="1" wrap="off" placeholder="Wklej jedno lub wiele ID. Możesz oddzielać je enterem, spacją albo przecinkiem."></textarea>
+                </div>
+                <button type="button" id="iaiOrdersApply" class="primary iaiOrdersSearchButton">
+                  <i class="fa-solid fa-magnifying-glass"></i>
+                  <span id="iaiOrdersApplyText">Pokaż zamówienia</span>
+                </button>
+                <button type="button" id="iaiOrdersReload" class="secondary iaiOrdersIconButton" title="Odśwież" aria-label="Odśwież">
+                  <i class="fa-solid fa-rotate-right"></i>
+                </button>
+                <button type="button" id="iaiOrdersClearLookup" class="secondary iaiOrdersIconButton" title="Wyczyść" aria-label="Wyczyść">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+            </section>
+
+            <div id="iaiOrdersEmptyState" class="iaiOrdersEmptyState">
+              <h3 id="iaiOrdersEmptyTitle">Ładowanie danych</h3>
+              <p id="iaiOrdersEmptyText">Trwa przygotowanie listy zamówień IAI.</p>
+            </div>
+
+            <div id="iaiOrdersTableWrap" class="offers-table-wrap" style="display:none;">
+              <table class="offers-table iaiOrdersTable" aria-label="Lista zamówień IAI">
+                <thead>
+                  <tr>
+                    <th class="iaiOrdersColSerial">SN</th>
+                    <th id="iaiOrdersHeadOrder" class="iaiOrdersColOrder">Zamówienie / klient</th>
+                    <th id="iaiOrdersHeadStatus" class="iaiOrdersColStatus">Status</th>
+                    <th id="iaiOrdersHeadDate" class="iaiOrdersColDate">Data dodania</th>
+                    <th id="iaiOrdersHeadValue" class="iaiOrdersColValue right">Wartość</th>
+                    <th id="iaiOrdersHeadActions" class="iaiOrdersColActions right">Akcje</th>
+                  </tr>
+                </thead>
+                <tbody id="iaiOrdersTbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="iaiOrdersModalBackdrop" class="iaiOrdersModalBackdrop" style="display:none;">
+      <div class="iaiOrdersModalCard">
+        <div class="iaiOrdersModalHead">
+          <div>
+            <div id="iaiOrdersModalEyebrow" class="pmReportEyebrow">Szczegóły zamówienia</div>
+            <h3 id="iaiOrdersModalTitle">Zamówienie</h3>
+          </div>
+          <div class="iaiOrdersModalActions">
+            <div class="iaiOrdersDocPicker">
+              <label for="iaiOrdersModalDocType" id="iaiOrdersModalDocTypeLabel" class="sr-only">Typ dokumentu</label>
+              <select id="iaiOrdersModalDocType" class="iaiOrdersDocSelect" aria-label="Typ dokumentu"></select>
+            </div>
+            <button type="button" id="iaiOrdersModalGenerate" class="secondary">
+              <i class="fa-solid fa-file-export"></i>
+              <span id="iaiOrdersModalGenerateText">Otwórz dokument</span>
+            </button>
+            <button type="button" id="iaiOrdersModalClose" class="secondary">
+              <i class="fa-solid fa-xmark"></i>
+              <span id="iaiOrdersModalCloseText">Zamknij</span>
+            </button>
+          </div>
+        </div>
+        <div id="iaiOrdersModalBody" class="iaiOrdersModalBody"></div>
+      </div>
+    </div>
+
+    <div id="iaiOrdersSerialPromptBackdrop" class="iaiOrdersSerialPromptBackdrop" style="display:none;">
+      <div class="iaiOrdersSerialPromptCard" role="dialog" aria-modal="true" aria-labelledby="iaiOrdersSerialPromptTitle">
+        <div class="iaiOrdersSerialPromptHead">
+          <div>
+            <div class="pmReportEyebrow">Dokument</div>
+            <h3 id="iaiOrdersSerialPromptTitle">Numery seryjne</h3>
+            <p id="iaiOrdersSerialPromptText">Uzupełnij numery seryjne lub pomiń ten krok.</p>
+          </div>
+          <button type="button" id="iaiOrdersSerialPromptClose" class="secondary iaiOrdersIconButton" aria-label="Zamknij">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+        <div id="iaiOrdersSerialPromptBody" class="iaiOrdersSerialPromptBody"></div>
+        <div class="iaiOrdersSerialPromptActions">
+          <button type="button" id="iaiOrdersSerialPromptSkip" class="secondary">Pomiń</button>
+          <button type="button" id="iaiOrdersSerialPromptSave" class="primary">
+            <i class="fa-solid fa-file-arrow-up"></i>
+            <span id="iaiOrdersSerialPromptSaveText">Zapisz i otwórz</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -995,6 +1114,78 @@
             <button id="btnSettingsTestIdoSell">
               <i class="fa-solid fa-plug-circle-check"></i>
               Testuj połączenie
+            </button>
+          </div>
+        </div>
+
+        <div class="mutedLine"></div>
+
+        <div class="toggleRow settingsIntegrationToggle">
+          <label class="settingsSwitch" for="settingsQuestionsWorkerEnabled">
+            <input id="settingsQuestionsWorkerEnabled" type="checkbox" />
+            <span class="settingsSwitchTrack" aria-hidden="true">
+              <span class="settingsSwitchThumb"></span>
+            </span>
+          </label>
+          <div>
+            <div style="font-weight:700;">Wlacz worker pytan od klientow</div>
+            <div class="mini">Osobny proces w tle sprawdza modul pytan klientow w IdoSell bez uruchamiania glownego okna generatora ofert.</div>
+          </div>
+        </div>
+
+        <div id="settingsQuestionsWorkerSection" class="settingsIntegrationSection">
+          <div class="toggleRow settingsIntegrationToggle">
+            <label class="settingsSwitch" for="settingsQuestionsWorkerNotifications">
+              <input id="settingsQuestionsWorkerNotifications" type="checkbox" checked />
+              <span class="settingsSwitchTrack" aria-hidden="true">
+                <span class="settingsSwitchThumb"></span>
+              </span>
+            </label>
+            <div>
+              <div style="font-weight:700;">Pokazuj powiadomienia</div>
+              <div class="mini">Po wykryciu nowych pytan worker pokaze powiadomienie systemowe Windows.</div>
+            </div>
+          </div>
+
+          <div class="toggleRow settingsIntegrationToggle">
+            <label class="settingsSwitch" for="settingsQuestionsWorkerStartWithSystem">
+              <input id="settingsQuestionsWorkerStartWithSystem" type="checkbox" />
+              <span class="settingsSwitchTrack" aria-hidden="true">
+                <span class="settingsSwitchThumb"></span>
+              </span>
+            </label>
+            <div>
+              <div style="font-weight:700;">Uruchamiaj wraz z systemem</div>
+              <div class="mini">Worker zostanie uruchomiony po zalogowaniu do Windows, nawet bez otwierania generatora ofert.</div>
+            </div>
+          </div>
+
+          <div class="fields settingsIntegrationFields">
+            <div style="grid-column:1/-1;">
+              <label>Interwal sprawdzania (minuty)</label>
+              <input id="settingsQuestionsWorkerInterval" type="number" min="1" max="1440" step="1" placeholder="10" />
+              <div class="mini settingsInlineHint">Domyślnie 10 minut. Ta funkcja jest obecnie zaparkowana.</div>
+            </div>
+          </div>
+
+          <div class="settingsIntegrationStatus" id="settingsQuestionsWorkerStatusBox">
+            <div class="settingsIntegrationStatusTitle">Status workera</div>
+            <div class="settingsIntegrationStatusText" id="settingsQuestionsWorkerStatusText">Worker nie byl jeszcze uruchomiony.</div>
+            <div class="mini" id="settingsQuestionsWorkerStatusMeta">Brak danych diagnostycznych.</div>
+          </div>
+
+          <div class="settingsModalActions settingsModalActionsSplit">
+            <button id="btnSettingsSaveQuestionsWorker" class="secondary">
+              <i class="fa-solid fa-floppy-disk"></i>
+              Zapisz worker
+            </button>
+            <button id="btnSettingsRestartQuestionsWorker" class="secondary">
+              <i class="fa-solid fa-rotate-right"></i>
+              Uruchom ponownie
+            </button>
+            <button id="btnSettingsStopQuestionsWorker" class="danger">
+              <i class="fa-solid fa-stop"></i>
+              Zatrzymaj worker
             </button>
           </div>
         </div>

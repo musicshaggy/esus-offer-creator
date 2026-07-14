@@ -100,6 +100,22 @@ function syncViewportMetrics() {
   document.documentElement.style.setProperty("--app-header-h", `${headerH}px`);
 }
 
+function refreshViewportMetricsDeferred() {
+  syncViewportMetrics();
+
+  requestAnimationFrame(() => {
+    syncViewportMetrics();
+
+    requestAnimationFrame(() => {
+      syncViewportMetrics();
+    });
+  });
+
+  setTimeout(() => {
+    syncViewportMetrics();
+  }, 0);
+}
+
 function showPage(pageId) {
   const mainPage = document.getElementById("mainPage");
   const offersPage = document.getElementById("offersPage");
@@ -1006,6 +1022,7 @@ async function init() {
         cameFromMainPage = false;
         showPage("offersPage");
         await offersCtl.refresh();
+        refreshViewportMetricsDeferred();
         showToast("UsuniÄ™to wszystkie zapisane oferty.", { type: "info", ms: 2800 });
       },
     });
@@ -1027,10 +1044,12 @@ async function init() {
 
       showPage("offersPage");
       await offersCtl.refresh();
+      refreshViewportMetricsDeferred();
     });
 
     showPage("offersPage");
     await offersCtl.refresh();
+    refreshViewportMetricsDeferred();
 
     el("btnNewOffer")?.addEventListener("click", async () => {
       const p = await createNewOffer(deps);
@@ -1073,6 +1092,8 @@ async function initAppVersion() {
   } catch {
     el.textContent = "";
   }
+
+  refreshViewportMetricsDeferred();
 }
 
 initAppVersion();
