@@ -1,9 +1,20 @@
 // main.js
-const { app, BrowserWindow, ipcMain, dialog, safeStorage } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, safeStorage, Notification } = require("electron");
+const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const { autoUpdater } = require("electron-updater");
+const {
+  WORKER_ARG,
+  normalizeQuestionsWorkerSettings,
+  resolveQuestionsWorkerPaths,
+  readQuestionsWorkerState,
+  writeQuestionsWorkerState,
+  appendQuestionsWorkerLog,
+  isProcessRunning,
+  createQuestionsWorkerRuntime,
+} = require("./background/idosellQuestionsWorker");
 
 app.setPath("userData", path.join(os.homedir(), "AppData", "Local", "ESUS-Quote"));
 
@@ -12,6 +23,19 @@ let win = null;
 const idosellOpenApiCache = new Map();
 const idosellProductSearchCache = new Map();
 const IDOSELL_PRODUCT_SEARCH_CACHE_VERSION = "v3";
+const IDOSELL_CUSTOMER_QUESTIONS_FEATURE_ENABLED = false;
+const IAI_ORDERS_OPEN_STATUSES = [
+  "new",
+  "payment_waiting",
+  "delivery_waiting",
+  "on_order",
+  "packed",
+  "packed_fulfillment",
+  "packed_ready",
+  "ready",
+  "wait_for_dispatch",
+  "suspended",
+];
 
 function closeSplash() {
   if (splashWin && !splashWin.isDestroyed()) {
@@ -105,12 +129,48 @@ function defaultUserSettings() {
     offerSeq: {},
     profile: null,
     docDefaults: { offerCcy: "PLN", lang: "pl", vatCode: "23" },
+    modulePrefs: {
+      iaiOrders: {
+        lang: "pl",
+        orderItemSerials: {},
+      },
+    },
     integrations: {
       idosell: {
         enabled: true,
         baseUrl: "",
+        customerQuestions: {
+          enabled: false,
+          notificationsEnabled: true,
+          intervalMinutes: 10,
+          startWithSystem: false,
+        },
       },
     },
+  };
+}
+
+function normalizeQuestionsWorkerSettingsForApp(raw) {
+  const next = normalizeQuestionsWorkerSettings(raw);
+  if (IDOSELL_CUSTOMER_QUESTIONS_FEATURE_ENABLED) return next;
+  return {
+    ...next,
+    enabled: false,
+    startWithSystem: false,
+  };
+}
+
+function buildQuestionsWorkerParkedStatus(status = {}) {
+  return {
+    ...status,
+    enabled: false,
+    startWithSystem: false,
+    isRunning: false,
+    pid: 0,
+    mode: "parked",
+    lastError: "",
+    lastMessage: "Modul pytan od klientow jest tymczasowo zaparkowany.",
+    customerQuestionsFeatureEnabled: false,
   };
 }
 
@@ -180,12 +240,16 @@ function sanitizeSettingsForRenderer(settings) {
   const hasApiKey = !!readEncryptedIdoSellApiKey();
 
   next.integrations = {
-    ...(next.integrations || {}),
-    idosell: {
-      ...(next.integrations?.idosell || {}),
-      apiKey: "",
-      enabled: next.integrations?.idosell?.enabled !== false,
+      ...(next.integrations || {}),
+      idosell: {
+        ...(next.integrations?.idosell || {}),
+        apiKey: "",
+        enabled: next.integrations?.idosell?.enabled !== false,
+        customerQuestions: normalizeQuestionsWorkerSettingsForApp(
+        next.integrations?.idosell?.customerQuestions
+      ),
       hasApiKey,
+      customerQuestionsFeatureEnabled: IDOSELL_CUSTOMER_QUESTIONS_FEATURE_ENABLED,
     },
   };
 
@@ -223,6 +287,38 @@ function mergeUserSettings(current, patch) {
     docDefaults: patch?.docDefaults
       ? { ...(defaults.docDefaults || {}), ...(current?.docDefaults || {}), ...patch.docDefaults }
       : current?.docDefaults || defaults.docDefaults,
+    modulePrefs: patch?.modulePrefs
+      ? {
+          ...(defaults.modulePrefs || {}),
+          ...(current?.modulePrefs || {}),
+          ...patch.modulePrefs,
+          iaiOrders: {
+            ...(defaults.modulePrefs?.iaiOrders || {}),
+            ...(current?.modulePrefs?.iaiOrders || {}),
+            ...(patch?.modulePrefs?.iaiOrders || {}),
+            orderItemSerials: Object.prototype.hasOwnProperty.call(
+              patch?.modulePrefs?.iaiOrders || {},
+              "orderItemSerials"
+            )
+              ? { ...(patch?.modulePrefs?.iaiOrders?.orderItemSerials || {}) }
+              : {
+                  ...(defaults.modulePrefs?.iaiOrders?.orderItemSerials || {}),
+                  ...(current?.modulePrefs?.iaiOrders?.orderItemSerials || {}),
+                },
+          },
+        }
+      : {
+          ...(defaults.modulePrefs || {}),
+          ...(current?.modulePrefs || {}),
+          iaiOrders: {
+            ...(defaults.modulePrefs?.iaiOrders || {}),
+            ...(current?.modulePrefs?.iaiOrders || {}),
+            orderItemSerials: {
+              ...(defaults.modulePrefs?.iaiOrders?.orderItemSerials || {}),
+              ...(current?.modulePrefs?.iaiOrders?.orderItemSerials || {}),
+            },
+          },
+        },
     integrations: {
       ...(defaults.integrations || {}),
       ...(current?.integrations || {}),
@@ -231,9 +327,248 @@ function mergeUserSettings(current, patch) {
         ...(defaults.integrations?.idosell || {}),
         ...(current?.integrations?.idosell || {}),
         ...(patch?.integrations?.idosell || {}),
+        customerQuestions: normalizeQuestionsWorkerSettingsForApp(
+          patch?.integrations?.idosell?.customerQuestions ??
+            current?.integrations?.idosell?.customerQuestions ??
+            defaults.integrations?.idosell?.customerQuestions
+        ),
       },
     },
   };
+}
+
+function isQuestionsWorkerProcess() {
+  return process.argv.includes(WORKER_ARG);
+}
+
+function getQuestionsWorkerPaths() {
+  return resolveQuestionsWorkerPaths(app.getPath("userData"));
+}
+
+function readCurrentUserSettings() {
+  return migratePlaintextIdoSellApiKey(
+    mergeUserSettings(readJsonSafe(getSettingsPath(), defaultUserSettings()), {})
+  );
+}
+
+function getQuestionsWorkerSettings(settings = readCurrentUserSettings()) {
+  return normalizeQuestionsWorkerSettingsForApp(
+    settings?.integrations?.idosell?.customerQuestions
+  );
+}
+
+function buildQuestionsWorkerLaunchConfig() {
+  if (app.isPackaged) {
+    return {
+      path: process.execPath,
+      args: [WORKER_ARG],
+    };
+  }
+
+  return {
+    path: process.execPath,
+    args: [app.getAppPath(), WORKER_ARG],
+  };
+}
+
+function readQuestionsWorkerStatus() {
+  const settings = readCurrentUserSettings();
+  const workerSettings = getQuestionsWorkerSettings(settings);
+  const state = readQuestionsWorkerState(getQuestionsWorkerPaths().statePath);
+  const hasApiKey = !!readEncryptedIdoSellApiKey();
+  const baseUrl = String(settings?.integrations?.idosell?.baseUrl || "").trim();
+  const running = isProcessRunning(state?.pid);
+
+  const next = {
+    ...state,
+    enabled: workerSettings.enabled,
+    notificationsEnabled: workerSettings.notificationsEnabled,
+    intervalMinutes: workerSettings.intervalMinutes,
+    startWithSystem: workerSettings.startWithSystem,
+    isRunning: running,
+    pid: running ? Number(state?.pid || 0) : 0,
+    idosellEnabled: settings?.integrations?.idosell?.enabled !== false,
+    baseUrlConfigured: !!baseUrl,
+    hasApiKey,
+  };
+
+  if (!IDOSELL_CUSTOMER_QUESTIONS_FEATURE_ENABLED) {
+    return buildQuestionsWorkerParkedStatus(next);
+  }
+
+  return next;
+}
+
+function syncQuestionsWorkerAutoStart(settings = readCurrentUserSettings()) {
+  if (!IDOSELL_CUSTOMER_QUESTIONS_FEATURE_ENABLED) {
+    app.setLoginItemSettings({ openAtLogin: false });
+    return;
+  }
+  const workerSettings = getQuestionsWorkerSettings(settings);
+  const launch = buildQuestionsWorkerLaunchConfig();
+  app.setLoginItemSettings({
+    openAtLogin: workerSettings.enabled && workerSettings.startWithSystem,
+    path: launch.path,
+    args: launch.args,
+  });
+}
+
+function spawnQuestionsWorkerProcess(source = "manual") {
+  const status = readQuestionsWorkerStatus();
+  const { statePath, logPath } = getQuestionsWorkerPaths();
+  const launch = buildQuestionsWorkerLaunchConfig();
+
+  if (status.isRunning && status.pid > 0) {
+    return status;
+  }
+
+  appendQuestionsWorkerLog(
+    logPath,
+    `Spawn requested from ${source}. path=${launch.path} args=${launch.args.join(" ")}`
+  );
+  writeQuestionsWorkerState(statePath, {
+    pid: 0,
+    mode: "starting",
+    lastMessage: `Uruchamianie workera (${source})...`,
+    lastError: "",
+  });
+
+  const child = spawn(launch.path, launch.args, {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.unref();
+
+  return readQuestionsWorkerStatus();
+}
+
+function stopQuestionsWorkerProcess(reason = "Worker zatrzymany z aplikacji.") {
+  const { statePath, logPath } = getQuestionsWorkerPaths();
+  const status = readQuestionsWorkerStatus();
+
+  if (status.pid && status.isRunning) {
+    try {
+      process.kill(status.pid);
+      appendQuestionsWorkerLog(logPath, `Stop signal sent to pid=${status.pid}.`);
+    } catch (error) {
+      appendQuestionsWorkerLog(
+        logPath,
+        `Stop signal failed for pid=${status.pid}: ${String(error?.message || error)}`
+      );
+    }
+  }
+
+  writeQuestionsWorkerState(statePath, {
+    pid: 0,
+    mode: "stopped",
+    lastExitAt: new Date().toISOString(),
+    lastHeartbeatAt: new Date().toISOString(),
+    lastMessage: reason,
+    nextCheckAt: "",
+  });
+
+  return readQuestionsWorkerStatus();
+}
+
+function restartQuestionsWorkerProcess(reason = "restart") {
+  if (!IDOSELL_CUSTOMER_QUESTIONS_FEATURE_ENABLED) {
+    stopQuestionsWorkerProcess("Modul pytan od klientow jest zaparkowany.");
+    return readQuestionsWorkerStatus();
+  }
+  stopQuestionsWorkerProcess(`Restart workera (${reason}).`);
+  const settings = readCurrentUserSettings();
+  const workerSettings = getQuestionsWorkerSettings(settings);
+  if (!workerSettings.enabled) {
+    return readQuestionsWorkerStatus();
+  }
+  return spawnQuestionsWorkerProcess(reason);
+}
+
+function syncQuestionsWorkerLifecycle(settings = readCurrentUserSettings(), source = "sync") {
+  if (isQuestionsWorkerProcess()) return readQuestionsWorkerStatus();
+
+  if (!IDOSELL_CUSTOMER_QUESTIONS_FEATURE_ENABLED) {
+    syncQuestionsWorkerAutoStart(settings);
+    return stopQuestionsWorkerProcess("Modul pytan od klientow jest zaparkowany.");
+  }
+
+  syncQuestionsWorkerAutoStart(settings);
+  const workerSettings = getQuestionsWorkerSettings(settings);
+
+  if (!workerSettings.enabled) {
+    return stopQuestionsWorkerProcess("Worker wylaczony w ustawieniach.");
+  }
+
+  const status = readQuestionsWorkerStatus();
+  if (!status.isRunning) {
+    return spawnQuestionsWorkerProcess(source);
+  }
+
+  return status;
+}
+
+async function runQuestionsWorkerProcess() {
+  if (!IDOSELL_CUSTOMER_QUESTIONS_FEATURE_ENABLED) {
+    app.quit();
+    return;
+  }
+
+  const { statePath, logPath } = getQuestionsWorkerPaths();
+  const currentState = readQuestionsWorkerState(statePath);
+
+  if (
+    currentState?.pid &&
+    Number(currentState.pid) !== process.pid &&
+    isProcessRunning(currentState.pid)
+  ) {
+    appendQuestionsWorkerLog(
+      logPath,
+      `Existing worker pid=${currentState.pid} detected. Current pid=${process.pid} exits.`
+    );
+    app.quit();
+    return;
+  }
+
+  const runtime = createQuestionsWorkerRuntime({
+    readSettings: () => readCurrentUserSettings(),
+    readApiKey: () => readEncryptedIdoSellApiKey(),
+    statePath,
+    logPath,
+    probeQuestions: ({ settings, apiKey, previousState }) =>
+      fetchIdoSellProductQuestionsProbe({
+        settings,
+        apiKey,
+        previousState,
+      }),
+    notify: ({ title, body }) => {
+      if (Notification?.isSupported?.()) {
+        const notification = new Notification({
+          title,
+          body,
+          silent: false,
+        });
+        notification.show();
+      }
+    },
+    onExitRequested: () => {
+      setTimeout(() => app.quit(), 200);
+    },
+  });
+
+  process.on("exit", () => {
+    runtime.stop("Worker process exiting.");
+  });
+  process.on("SIGTERM", () => {
+    runtime.stop("Worker process received SIGTERM.");
+    process.exit(0);
+  });
+  process.on("SIGINT", () => {
+    runtime.stop("Worker process received SIGINT.");
+    process.exit(0);
+  });
+
+  await runtime.start();
 }
 
 function normalizeExternalBaseUrl(input) {
@@ -531,6 +866,256 @@ function buildIdoSellAdminUrl(baseUrl, endpoint) {
   return new URL(`/api/admin/v7/${String(endpoint || "").replace(/^\/+/, "")}`, normalizedBaseUrl).toString();
 }
 
+function buildIdoSellAdminVersionedUrls(baseUrl, endpoint, versions = ["v8", "v7", "v6"]) {
+  const normalizedBaseUrl = normalizeExternalBaseUrl(baseUrl);
+  const cleanEndpoint = String(endpoint || "").replace(/^\/+/, "");
+  return Array.from(
+    new Set(
+      versions.map((version) =>
+        new URL(`/api/admin/${version}/${cleanEndpoint}`, normalizedBaseUrl).toString()
+      )
+    )
+  );
+}
+
+function buildIdoSellQuestionsUrls(baseUrl) {
+  const normalizedBaseUrl = normalizeExternalBaseUrl(baseUrl);
+  return Array.from(
+    new Set(
+      ["v8", "v7", "v6"].map((version) =>
+        new URL(`/api/admin/${version}/products/questions`, normalizedBaseUrl).toString()
+      )
+    )
+  );
+}
+
+function decodeIdoSellBase64Text(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  try {
+    return Buffer.from(raw, "base64")
+      .toString("utf8")
+      .replace(/\s+/g, " ")
+      .trim();
+  } catch {
+    return raw;
+  }
+}
+
+function parseIdoSellDateToTimestamp(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return 0;
+
+  const direct = Date.parse(raw);
+  if (Number.isFinite(direct)) return direct;
+
+  const normalized = raw.replace(" ", "T");
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeIdoSellQuestionItem(item) {
+  const id = Number(item?.id || 0);
+  return {
+    id: Number.isFinite(id) ? id : 0,
+    lang: String(item?.lang || "").trim(),
+    author: String(item?.author || "").trim(),
+    host: String(item?.host || "").trim(),
+    productId: Number(item?.productId || 0) || 0,
+    question: decodeIdoSellBase64Text(item?.question),
+    answer: decodeIdoSellBase64Text(item?.answer),
+    dateAdd: String(item?.dateAdd || "").trim(),
+    dateTs: parseIdoSellDateToTimestamp(item?.dateAdd),
+    answerDate: String(item?.answerDate || "").trim(),
+    answerAuthor: String(item?.answerAuthor || "").trim(),
+    visible: String(item?.visible || "").trim(),
+    confirmed: String(item?.confirmed || "").trim(),
+    priority: Number(item?.priority || 0) || 0,
+    shopId: Number(item?.shopId || 0) || 0,
+  };
+}
+
+function formatIdoSellQuestionLabel(question) {
+  if (!question || typeof question !== "object") return "Nowe pytanie klienta";
+
+  const author = String(question.author || "").trim();
+  const product = question.productId ? `produkt #${question.productId}` : "produkt";
+  const content = String(question.question || "").trim();
+  const snippet =
+    content.length > 68 ? `${content.slice(0, 65).trimEnd()}...` : content;
+
+  if (author && snippet) return `${author}: ${snippet}`;
+  if (snippet) return snippet;
+  if (author) return `${author} pyta o ${product}`;
+  return `Nowe pytanie o ${product}`;
+}
+
+async function fetchIdoSellProductQuestionsProbe({ settings, apiKey, previousState } = {}) {
+  const idosell = settings?.integrations?.idosell || {};
+
+  if (idosell.enabled === false) {
+    return {
+      mode: "paused",
+      apiStatus: "idosell_disabled",
+      message: "Integracja IdoSell jest wylaczona. Worker czeka na ponowne wlaczenie.",
+      items: [],
+      cursor: previousState?.lastSeenQuestionId || "",
+      totalQuestions: 0,
+    };
+  }
+
+  const baseUrlCheck = validateIdoSellBaseUrl(idosell?.baseUrl || "");
+  if (!baseUrlCheck.ok || !String(apiKey || "").trim()) {
+    return {
+      mode: "waiting_config",
+      apiStatus: "missing_config",
+      message: "Brak pelnej konfiguracji IdoSell. Ustaw Base URL i klucz API.",
+      items: [],
+      cursor: previousState?.lastSeenQuestionId || "",
+      totalQuestions: 0,
+    };
+  }
+
+  const previousSeenId = Number(previousState?.lastSeenQuestionId || 0) || 0;
+  const isBootstrap = previousSeenId <= 0;
+  const urls = buildIdoSellQuestionsUrls(baseUrlCheck.normalizedBaseUrl);
+  let lastFailure = null;
+
+  for (const url of urls) {
+    try {
+      const { response, json, text } = await callIdoSellJson(url, {
+        apiKey,
+        timeoutMs: 15000,
+      });
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          return {
+            mode: "error",
+            apiStatus: "auth_error",
+            message: "IdoSell odrzucil klucz API dla modulu pytan do produktow.",
+            error: `HTTP ${response.status}`,
+            endpointUrl: url,
+            items: [],
+            cursor: previousState?.lastSeenQuestionId || "",
+            totalQuestions: 0,
+          };
+        }
+
+        lastFailure = {
+          mode: "error",
+          apiStatus: "http_error",
+          message: `Pobieranie pytan IdoSell nie powiodlo sie (${response.status}).`,
+          error: text?.slice(0, 240) || `HTTP ${response.status}`,
+          endpointUrl: url,
+          items: [],
+          cursor: previousState?.lastSeenQuestionId || "",
+          totalQuestions: 0,
+        };
+        continue;
+      }
+
+      const rawResults = Array.isArray(json?.results) ? json.results : [];
+      const resultsNumberAll = Number(json?.resultsNumberAll || 0) || rawResults.length;
+      const questions = rawResults
+        .map(normalizeIdoSellQuestionItem)
+        .filter((item) => item.id > 0)
+        .sort((a, b) => {
+          if (b.id !== a.id) return b.id - a.id;
+          return b.dateTs - a.dateTs;
+        });
+      const sampleQuestionIds = questions.slice(0, 5).map((item) => item.id);
+
+      const maxId = questions.reduce((highest, item) => Math.max(highest, item.id), previousSeenId);
+      const cursor = maxId > 0 ? String(maxId) : String(previousState?.lastSeenQuestionId || "");
+      const newQuestions = previousSeenId > 0
+        ? questions.filter((item) => item.id > previousSeenId)
+        : [];
+      const unansweredNewQuestions = newQuestions.filter((item) => !item.answerDate && !item.answer);
+      const notifyItems = unansweredNewQuestions.length ? unansweredNewQuestions : newQuestions;
+
+      if (isBootstrap) {
+        return {
+          mode: "running",
+          apiStatus: "ok",
+          message: questions.length
+            ? `Worker zsynchronizowal ${questions.length} pytan z IdoSell. Powiadomienia beda wysylane od kolejnego sprawdzenia.`
+            : "Brak pytan w module IdoSell.",
+          endpointUrl: url,
+          apiVersion: /\/api\/admin\/(v\d+)\//i.exec(url)?.[1] || "",
+          resultsNumberAll,
+          sampleQuestionIds,
+          items: [],
+          cursor,
+          totalQuestions: resultsNumberAll,
+        };
+      }
+
+      if (notifyItems.length > 0) {
+        const newestQuestion = notifyItems[0];
+        return {
+          mode: "running",
+          apiStatus: "ok",
+          message: `Wykryto ${notifyItems.length} nowych pytan w module IdoSell.`,
+          notificationTitle:
+            notifyItems.length === 1 ? "Nowe pytanie od klienta" : "Nowe pytania od klientow",
+          notificationBody:
+            notifyItems.length === 1
+              ? formatIdoSellQuestionLabel(newestQuestion)
+              : `${notifyItems.length} nowych pytan. Ostatnie: ${formatIdoSellQuestionLabel(newestQuestion)}`,
+          endpointUrl: url,
+          apiVersion: /\/api\/admin\/(v\d+)\//i.exec(url)?.[1] || "",
+          resultsNumberAll,
+          sampleQuestionIds,
+          items: notifyItems,
+          cursor,
+          totalQuestions: resultsNumberAll,
+        };
+      }
+
+      return {
+        mode: "running",
+        apiStatus: "ok",
+        message: questions.length
+          ? `Brak nowych pytan. W module IdoSell jest ${questions.length} pytan.`
+          : "Brak pytan w module IdoSell.",
+        endpointUrl: url,
+        apiVersion: /\/api\/admin\/(v\d+)\//i.exec(url)?.[1] || "",
+        resultsNumberAll,
+        sampleQuestionIds,
+        items: [],
+        cursor,
+        totalQuestions: resultsNumberAll,
+      };
+    } catch (error) {
+      lastFailure = {
+        mode: "error",
+        apiStatus: "network_error",
+        message: "Nie udalo sie pobrac pytan z IdoSell.",
+        error: String(error?.message || error || "Nieznany blad."),
+        endpointUrl: url,
+        items: [],
+        cursor: previousState?.lastSeenQuestionId || "",
+        totalQuestions: 0,
+      };
+    }
+  }
+
+  return (
+    lastFailure || {
+      mode: "error",
+      apiStatus: "unknown_error",
+      message: "Nie udalo sie sprawdzic pytan z IdoSell.",
+      error: "Brak odpowiedzi z endpointu products/questions.",
+      endpointUrl: "",
+      items: [],
+      cursor: previousState?.lastSeenQuestionId || "",
+      totalQuestions: 0,
+    }
+  );
+}
+
 function getIdoSellIntegrationSettings() {
   const settings = migratePlaintextIdoSellApiKey(
     mergeUserSettings(readJsonSafe(getSettingsPath(), defaultUserSettings()), {})
@@ -559,6 +1144,239 @@ async function callIdoSellJson(url, { method = "GET", apiKey, body, timeoutMs } 
   }
 
   return await fetchJsonWithTimeout(url, options, timeoutMs);
+}
+
+async function callIdoSellJsonFallback(urls, options = {}) {
+  let lastError = null;
+
+  for (const url of Array.isArray(urls) ? urls : []) {
+    try {
+      const result = await callIdoSellJson(url, options);
+      if (result?.response?.ok) {
+        return { ...result, url };
+      }
+
+      const status = Number(result?.response?.status || 0);
+      const message = String(result?.text || "").trim();
+
+      if (status === 401 || status === 403) {
+        throw new Error(`IdoSell API odrzucilo autoryzacje (${status}). ${message}`.trim());
+      }
+
+      lastError = new Error(
+        `IdoSell API odpowiedzialo statusem ${status || "?"} dla ${url}.${message ? ` ${message}` : ""}`
+      );
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error || "Nieznany blad IdoSell."));
+      if (/autoryzac|401|403/i.test(String(lastError.message || ""))) {
+        break;
+      }
+    }
+  }
+
+  throw lastError || new Error("Nie udalo sie polaczyc z IdoSell API.");
+}
+
+function extractIdoSellResults(json) {
+  if (Array.isArray(json?.Results)) return json.Results;
+  if (Array.isArray(json?.results)) return json.results;
+  return [];
+}
+
+function parseIdoSellApiVersionFromUrl(url) {
+  return /\/api\/admin\/(v\d+)\//i.exec(String(url || ""))?.[1] || "";
+}
+
+function sanitizeIaiOrderLookupTokens(values = []) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [values])
+        .flatMap((value) => String(value || "").split(/[\s,;]+/))
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .filter((value) => /^[A-Za-z0-9._:-]+$/.test(value))
+    )
+  );
+}
+
+function splitIaiOrderLookupTokens(values = []) {
+  const tokens = sanitizeIaiOrderLookupTokens(values);
+  return {
+    orderIds: tokens,
+    orderSerialNumbers: tokens
+      .filter((value) => /^\d+$/.test(value))
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0),
+  };
+}
+
+function appendJoinedSearchParam(url, name, values = []) {
+  if (!Array.isArray(values) || values.length === 0) return;
+  url.searchParams.set(name, values.join(","));
+}
+
+function dedupeIaiOrders(rows = []) {
+  const seen = new Set();
+  const unique = [];
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = String(row?.orderId || row?.orderSerialNumber || "").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(row);
+  }
+
+  unique.sort((left, right) => {
+    const leftDate =
+      Date.parse(String(left?.orderDetails?.orderAddDate || "")) ||
+      Date.parse(String(left?.orderAddDate || "")) ||
+      0;
+    const rightDate =
+      Date.parse(String(right?.orderDetails?.orderAddDate || "")) ||
+      Date.parse(String(right?.orderAddDate || "")) ||
+      0;
+    return rightDate - leftDate;
+  });
+
+  return unique;
+}
+
+async function fetchIaiOrderDetails({ orderIds = [], orderSerialNumbers = [] } = {}) {
+  const idosell = getIdoSellIntegrationSettings();
+  if (!idosell.enabled) {
+    throw new Error("Integracja IdoSell jest wylaczona.");
+  }
+  if (!idosell.baseUrl || !idosell.apiKey) {
+    throw new Error("Brakuje pelnej konfiguracji integracji IdoSell.");
+  }
+
+  const cleanOrderIds = sanitizeIaiOrderLookupTokens(orderIds);
+  const cleanSerialNumbers = Array.from(
+    new Set(
+      (Array.isArray(orderSerialNumbers) ? orderSerialNumbers : [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0)
+    )
+  );
+
+  if (!cleanOrderIds.length && !cleanSerialNumbers.length) {
+    return {
+      apiVersion: "",
+      endpointUrl: "",
+      orders: [],
+    };
+  }
+
+  const endpointBases = buildIdoSellAdminVersionedUrls(idosell.baseUrl, "orders/orders");
+  const requestGroups = [];
+
+  if (cleanOrderIds.length) {
+    requestGroups.push(
+      endpointBases.map((urlString) => {
+        const url = new URL(urlString);
+        appendJoinedSearchParam(url, "ordersIds", cleanOrderIds);
+        return url.toString();
+      })
+    );
+  }
+
+  if (cleanSerialNumbers.length) {
+    requestGroups.push(
+      endpointBases.map((urlString) => {
+        const url = new URL(urlString);
+        appendJoinedSearchParam(url, "ordersSerialNumbers", cleanSerialNumbers);
+        return url.toString();
+      })
+    );
+  }
+
+  const results = [];
+  let lastRequestError = null;
+  for (const urls of requestGroups) {
+    try {
+      results.push(
+        await callIdoSellJsonFallback(urls, {
+          apiKey: idosell.apiKey,
+          timeoutMs: 20000,
+        })
+      );
+    } catch (error) {
+      lastRequestError = error;
+    }
+  }
+  if (!results.length && lastRequestError) {
+    throw lastRequestError;
+  }
+
+  const orders = dedupeIaiOrders(
+    results.flatMap((result) => extractIdoSellResults(result.json))
+  );
+  const primaryResult = results[0] || null;
+
+  return {
+    apiVersion: parseIdoSellApiVersionFromUrl(primaryResult?.url || ""),
+    endpointUrl: results.map((result) => result.url).filter(Boolean).join(" | "),
+    orders,
+  };
+}
+
+async function searchIaiOrders({ manualLookup = "", resultsLimit = 100 } = {}) {
+  const idosell = getIdoSellIntegrationSettings();
+  if (!idosell.enabled) {
+    throw new Error("Integracja IdoSell jest wylaczona.");
+  }
+  if (!idosell.baseUrl || !idosell.apiKey) {
+    throw new Error("Brakuje pelnej konfiguracji integracji IdoSell.");
+  }
+
+  const { orderIds, orderSerialNumbers } = splitIaiOrderLookupTokens(manualLookup);
+  if (orderIds.length || orderSerialNumbers.length) {
+    const manualResult = await fetchIaiOrderDetails({ orderIds, orderSerialNumbers });
+    const orders = manualResult.orders || [];
+    return {
+      apiVersion: manualResult.apiVersion,
+      endpointUrl: manualResult.endpointUrl,
+      resultsNumberAll: orders.length,
+      resultsNumberPage: orders.length,
+      resultsPage: 0,
+      resultsLimit: Math.min(100, Math.max(1, Number(resultsLimit) || 100)),
+      orders,
+      manualLookup: sanitizeIaiOrderLookupTokens(manualLookup),
+    };
+  }
+
+  const urls = buildIdoSellAdminVersionedUrls(idosell.baseUrl, "orders/orders/search");
+  const result = await callIdoSellJsonFallback(urls, {
+    method: "POST",
+    apiKey: idosell.apiKey,
+    timeoutMs: 25000,
+    body: {
+      params: {
+        ordersStatuses: IAI_ORDERS_OPEN_STATUSES,
+        resultsPage: 0,
+        resultsLimit: Math.min(100, Math.max(1, Number(resultsLimit) || 100)),
+        ordersBy: [
+          {
+            elementName: "order_time",
+            sortDirection: "DESC",
+          },
+        ],
+      },
+    },
+  });
+
+  const orders = dedupeIaiOrders(extractIdoSellResults(result.json));
+
+  return {
+    apiVersion: parseIdoSellApiVersionFromUrl(result.url),
+    endpointUrl: result.url,
+    resultsNumberAll: Number(result?.json?.resultsNumberAll || orders.length) || orders.length,
+    resultsNumberPage: Number(result?.json?.resultsNumberPage || orders.length) || orders.length,
+    resultsPage: Number(result?.json?.resultsPage || 0) || 0,
+    resultsLimit: Number(result?.json?.resultsLimit || resultsLimit) || resultsLimit,
+    orders,
+    manualLookup: sanitizeIaiOrderLookupTokens(manualLookup),
+  };
 }
 
 function getOperationParameters(pathConfig, operation) {
@@ -1978,19 +2796,78 @@ function sanitizeSettingsPatch(patch) {
     };
   }
 
+  if (isPlainObject(patch.modulePrefs)) {
+    next.modulePrefs = {};
+
+    if (isPlainObject(patch.modulePrefs.iaiOrders)) {
+      next.modulePrefs.iaiOrders = {};
+
+      if (Object.prototype.hasOwnProperty.call(patch.modulePrefs.iaiOrders, "lang")) {
+        next.modulePrefs.iaiOrders.lang = String(patch.modulePrefs.iaiOrders.lang || "").trim().toLowerCase();
+      }
+
+      if (isPlainObject(patch.modulePrefs.iaiOrders.orderItemSerials)) {
+        const orderItemSerials = {};
+        for (const [orderToken, rawItems] of Object.entries(patch.modulePrefs.iaiOrders.orderItemSerials)) {
+          const normalizedOrderToken = String(orderToken || "").trim();
+          if (!normalizedOrderToken || !isPlainObject(rawItems)) continue;
+
+          const normalizedItems = {};
+          for (const [itemKey, rawSerials] of Object.entries(rawItems)) {
+            const normalizedItemKey = String(itemKey || "").trim();
+            if (!normalizedItemKey) continue;
+
+            const serials = Array.isArray(rawSerials)
+              ? rawSerials
+              : typeof rawSerials === "string"
+                ? [rawSerials]
+                : [];
+
+            const normalizedSerials = serials
+              .map((entry) => String(entry || "").trim())
+              .filter(Boolean)
+              .slice(0, 200);
+
+            if (normalizedSerials.length) {
+              normalizedItems[normalizedItemKey] = normalizedSerials;
+            }
+          }
+
+          if (Object.keys(normalizedItems).length) {
+            orderItemSerials[normalizedOrderToken] = normalizedItems;
+          }
+        }
+
+        next.modulePrefs.iaiOrders.orderItemSerials = orderItemSerials;
+      }
+    }
+  }
+
   if (isPlainObject(patch.integrations)) {
     next.integrations = {};
     if (isPlainObject(patch.integrations.idosell)) {
-      const rawBaseUrl = String(patch.integrations.idosell.baseUrl || "").trim();
-      const validatedBaseUrl = rawBaseUrl ? validateIdoSellBaseUrl(rawBaseUrl) : { ok: true, normalizedBaseUrl: "" };
-      if (!validatedBaseUrl.ok) {
-        throw new Error(validatedBaseUrl.message);
+      next.integrations.idosell = {};
+
+      if (Object.prototype.hasOwnProperty.call(patch.integrations.idosell, "enabled")) {
+        next.integrations.idosell.enabled = patch.integrations.idosell.enabled !== false;
       }
 
-      next.integrations.idosell = {
-        enabled: patch.integrations.idosell.enabled !== false,
-        baseUrl: validatedBaseUrl.normalizedBaseUrl || "",
-      };
+      if (Object.prototype.hasOwnProperty.call(patch.integrations.idosell, "baseUrl")) {
+        const rawBaseUrl = String(patch.integrations.idosell.baseUrl || "").trim();
+        const validatedBaseUrl = rawBaseUrl
+          ? validateIdoSellBaseUrl(rawBaseUrl)
+          : { ok: true, normalizedBaseUrl: "" };
+        if (!validatedBaseUrl.ok) {
+          throw new Error(validatedBaseUrl.message);
+        }
+        next.integrations.idosell.baseUrl = validatedBaseUrl.normalizedBaseUrl || "";
+      }
+
+      if (isPlainObject(patch.integrations.idosell.customerQuestions)) {
+        next.integrations.idosell.customerQuestions = normalizeQuestionsWorkerSettingsForApp(
+          patch.integrations.idosell.customerQuestions
+        );
+      }
       if (Object.prototype.hasOwnProperty.call(patch.integrations.idosell, "apiKey")) {
         next.integrations.idosell.apiKey = String(patch.integrations.idosell.apiKey || "").trim();
       }
@@ -2071,12 +2948,18 @@ function normalizeOfferMeta(meta, fallbackMeta) {
   return m;
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  if (isQuestionsWorkerProcess()) {
+    await runQuestionsWorkerProcess();
+    return;
+  }
+
   splashClosed = false;
   createSplash();
   createWindow();
 
   initAutoUpdater(win);
+  syncQuestionsWorkerLifecycle(readCurrentUserSettings(), "app-start");
 });
 
 app.on("window-all-closed", () => {
@@ -2085,10 +2968,7 @@ app.on("window-all-closed", () => {
 
 // ===== IPC: user settings =====
 ipcMain.handle("settings:get", async () => {
-  const p = getSettingsPath();
-  const settings = migratePlaintextIdoSellApiKey(
-    mergeUserSettings(readJsonSafe(p, defaultUserSettings()), {})
-  );
+  const settings = readCurrentUserSettings();
   return sanitizeSettingsForRenderer(settings);
 });
 
@@ -2126,6 +3006,7 @@ ipcMain.handle("settings:set", async (_evt, patch) => {
   }
 
   writeJsonSafe(p, next);
+  syncQuestionsWorkerLifecycle(next, "settings-save");
   return sanitizeSettingsForRenderer(next);
 });
 
@@ -2146,12 +3027,58 @@ ipcMain.handle("settings:clearAllData", async () => {
   deleteFileIfExists(getSettingsPath());
   deleteFileIfExists(clientsPath());
   deleteFileIfExists(idosellApiKeyPath());
+  syncQuestionsWorkerAutoStart(defaultUserSettings());
+  stopQuestionsWorkerProcess("Worker zatrzymany po wyczyszczeniu danych aplikacji.");
   return sanitizeSettingsForRenderer(defaultUserSettings());
 });
 
 ipcMain.handle("settings:testIdoSellConnection", async (_evt, payload) => {
   if (!isPlainObject(payload || {})) throw new Error("Nieprawidłowe dane testu połączenia.");
   return await testIdoSellConnection(payload || {});
+});
+
+ipcMain.handle("idosellQuestionsWorker:getStatus", async () => {
+  return readQuestionsWorkerStatus();
+});
+
+ipcMain.handle("idosellQuestionsWorker:start", async () => {
+  if (!IDOSELL_CUSTOMER_QUESTIONS_FEATURE_ENABLED) {
+    stopQuestionsWorkerProcess("Modul pytan od klientow jest zaparkowany.");
+    return readQuestionsWorkerStatus();
+  }
+
+  const settings = readCurrentUserSettings();
+  const workerSettings = getQuestionsWorkerSettings(settings);
+
+  if (!workerSettings.enabled) {
+    const next = mergeUserSettings(settings, {
+      integrations: {
+        idosell: {
+          customerQuestions: {
+            ...workerSettings,
+            enabled: true,
+          },
+        },
+      },
+    });
+    writeJsonSafe(getSettingsPath(), next);
+    syncQuestionsWorkerLifecycle(next, "manual-start");
+    return readQuestionsWorkerStatus();
+  }
+
+  return restartQuestionsWorkerProcess("manual-start");
+});
+
+ipcMain.handle("idosellQuestionsWorker:stop", async () => {
+  return stopQuestionsWorkerProcess("Worker zatrzymany recznie.");
+});
+
+ipcMain.handle("idosellQuestionsWorker:restart", async () => {
+  if (!IDOSELL_CUSTOMER_QUESTIONS_FEATURE_ENABLED) {
+    stopQuestionsWorkerProcess("Modul pytan od klientow jest zaparkowany.");
+    return readQuestionsWorkerStatus();
+  }
+  return restartQuestionsWorkerProcess("manual-restart");
 });
 
 // ===== IPC: clients =====
@@ -2208,6 +3135,26 @@ ipcMain.handle("idosell:searchProducts", async (_evt, payload) => {
   const preferredCurrency =
     typeof payload === "object" && payload !== null ? payload.preferredCurrency : "PLN";
   return await searchIdoSellProducts(String(query || ""), String(preferredCurrency || "PLN"));
+});
+
+ipcMain.handle("idosell:ordersList", async (_evt, payload) => {
+  const manualLookup =
+    typeof payload === "object" && payload !== null ? payload.manualLookup : "";
+  const resultsLimit =
+    typeof payload === "object" && payload !== null ? payload.resultsLimit : 100;
+  return await searchIaiOrders({
+    manualLookup: String(manualLookup || ""),
+    resultsLimit,
+  });
+});
+
+ipcMain.handle("idosell:orderGet", async (_evt, payload) => {
+  const manualLookup =
+    typeof payload === "object" && payload !== null
+      ? payload.manualLookup ?? payload.orderId ?? payload.orderSerialNumber ?? ""
+      : payload;
+  const { orderIds, orderSerialNumbers } = splitIaiOrderLookupTokens(manualLookup);
+  return await fetchIaiOrderDetails({ orderIds, orderSerialNumbers });
 });
 
 // ===== IPC: offers CRUD =====
@@ -2453,6 +3400,67 @@ ipcMain.handle("export:excel", async (_evt, { defaultName, buffer }) => {
 
   fs.writeFileSync(res.filePath, Buffer.from(buffer));
   return { ok: true, path: res.filePath };
+});
+
+ipcMain.handle("export:pdfFromHtml", async (_evt, { defaultName, html, dialogTitle }) => {
+  const safeDefaultName = String(defaultName || "dokument.pdf").toLowerCase().endsWith(".pdf")
+    ? String(defaultName || "dokument.pdf")
+    : `${String(defaultName || "dokument")}.pdf`;
+  const res = await dialog.showSaveDialog({
+    title: String(dialogTitle || "Eksportuj dokument do PDF"),
+    defaultPath: safeDefaultName,
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+  });
+  if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+
+  const tempPath = path.join(
+    app.getPath("temp"),
+    `esus-document-${process.pid}-${Date.now()}.html`
+  );
+  let exportWin = null;
+
+  try {
+    fs.writeFileSync(tempPath, String(html || ""), "utf-8");
+    exportWin = new BrowserWindow({
+      show: false,
+      width: 1100,
+      height: 900,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+
+    await exportWin.loadFile(tempPath);
+    await exportWin.webContents.executeJavaScript(`
+      Promise.race([
+        Promise.all([
+          document.fonts ? document.fonts.ready : Promise.resolve(),
+          ...Array.from(document.images).map((image) => image.complete
+            ? Promise.resolve()
+            : new Promise((resolve) => {
+                image.addEventListener("load", resolve, { once: true });
+                image.addEventListener("error", resolve, { once: true });
+              }))
+        ]),
+        new Promise((resolve) => setTimeout(resolve, 5000))
+      ])
+    `);
+
+    const pdf = await exportWin.webContents.printToPDF({
+      printBackground: true,
+      pageSize: "A4",
+      preferCSSPageSize: true,
+    });
+    fs.writeFileSync(res.filePath, pdf);
+    return { ok: true, path: res.filePath };
+  } finally {
+    if (exportWin && !exportWin.isDestroyed()) exportWin.destroy();
+    try {
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    } catch {}
+  }
 });
 
 ipcMain.handle("window:minimize", (evt) => {

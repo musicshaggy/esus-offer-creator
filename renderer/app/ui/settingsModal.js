@@ -4,6 +4,9 @@ import {
   resetUserCounter,
   clearAllUserData,
   testIdoSellConnection,
+  getIdoSellQuestionsWorkerStatus,
+  stopIdoSellQuestionsWorker,
+  restartIdoSellQuestionsWorker,
 } from "../state/userSettings.js";
 import { offersService } from "../offers/offersService.js";
 import { showToast, showToastAction } from "./toast.js";
@@ -117,6 +120,65 @@ function setIdoSellSectionEnabled(enabled) {
   });
 }
 
+function setQuestionsWorkerSectionEnabled(enabled) {
+  const section = el("settingsQuestionsWorkerSection");
+  const nodes = [
+    el("settingsQuestionsWorkerNotifications"),
+    el("settingsQuestionsWorkerStartWithSystem"),
+    el("settingsQuestionsWorkerInterval"),
+    el("btnSettingsSaveQuestionsWorker"),
+    el("btnSettingsRestartQuestionsWorker"),
+    el("btnSettingsStopQuestionsWorker"),
+  ];
+
+  section?.classList.toggle("is-disabled", !enabled);
+  nodes.forEach((node) => {
+    if (!node) return;
+    node.disabled = !enabled;
+  });
+}
+
+function setQuestionsWorkerFeatureAvailability(enabled) {
+  const toggle = el("settingsQuestionsWorkerEnabled");
+  if (toggle) toggle.disabled = !enabled;
+}
+
+function setQuestionsWorkerStatus(text, type = "neutral", meta = "") {
+  const box = el("settingsQuestionsWorkerStatusBox");
+  const textNode = el("settingsQuestionsWorkerStatusText");
+  const metaNode = el("settingsQuestionsWorkerStatusMeta");
+  if (!box || !textNode || !metaNode) return;
+
+  box.classList.remove("is-success", "is-error");
+  if (type === "success") box.classList.add("is-success");
+  if (type === "error") box.classList.add("is-error");
+
+  textNode.textContent = text || "Brak danych o workerze.";
+  metaNode.textContent = meta || "Brak danych diagnostycznych.";
+}
+
+function formatQuestionsWorkerMeta(status) {
+  if (!status || typeof status !== "object") {
+    return "Brak danych diagnostycznych.";
+  }
+
+  const parts = [];
+  if (status.apiVersion) parts.push(`API: ${status.apiVersion}`);
+  if (status.pid) parts.push(`PID: ${status.pid}`);
+  if (status.intervalMinutes) parts.push(`Interwal: ${status.intervalMinutes} min`);
+  if (Number.isFinite(Number(status.resultsNumberAll))) {
+    parts.push(`Liczba pytan: ${Number(status.resultsNumberAll || 0)}`);
+  }
+  if (Array.isArray(status.sampleQuestionIds) && status.sampleQuestionIds.length) {
+    parts.push(`ID: ${status.sampleQuestionIds.join(", ")}`);
+  }
+  if (status.lastCheckAt) parts.push(`Ostatnie sprawdzenie: ${status.lastCheckAt}`);
+  if (status.nextCheckAt) parts.push(`Nastepne sprawdzenie: ${status.nextCheckAt}`);
+  if (status.endpointUrl) parts.push(`URL: ${status.endpointUrl}`);
+  if (status.lastError) parts.push(`Ostatni blad: ${status.lastError}`);
+  return parts.length ? parts.join(" | ") : "Brak danych diagnostycznych.";
+}
+
 function updateIdoSellSaveButtonEnabled(enabled, testPassed) {
   const saveBtn = el("btnSettingsSaveIdoSell");
   if (!saveBtn) return;
@@ -138,14 +200,38 @@ async function fillForm() {
   const initialsEl = el("settingsProfileInitials");
   const idosell = settings?.integrations?.idosell || {};
   const idosellEnabled = idosell?.enabled !== false;
+  const questionsWorker = idosell?.customerQuestions || {};
+  const questionsFeatureEnabled = idosell?.customerQuestionsFeatureEnabled === true;
 
   el("settingsProfileFullName").value = profile?.fullName || "";
   el("settingsProfileEmail").value = profile?.email || "";
   el("settingsProfilePhone").value = profile?.phone || "";
   el("settingsIdoSellEnabled").checked = idosellEnabled;
   el("settingsIdoSellBaseUrl").value = idosell?.baseUrl || "";
+  el("settingsQuestionsWorkerEnabled").checked =
+    questionsFeatureEnabled && questionsWorker?.enabled === true;
+  el("settingsQuestionsWorkerNotifications").checked = questionsWorker?.notificationsEnabled !== false;
+  el("settingsQuestionsWorkerStartWithSystem").checked = questionsWorker?.startWithSystem === true;
+  el("settingsQuestionsWorkerInterval").value = String(questionsWorker?.intervalMinutes || 10);
   configureIdoSellApiKeyField(el("settingsIdoSellApiKey"), !!idosell?.hasApiKey);
   setIdoSellSectionEnabled(idosellEnabled);
+  setQuestionsWorkerFeatureAvailability(questionsFeatureEnabled);
+  setQuestionsWorkerSectionEnabled(
+    questionsFeatureEnabled && questionsWorker?.enabled === true
+  );
+  setQuestionsWorkerStatus(
+    questionsFeatureEnabled
+      ? questionsWorker?.enabled === true
+        ? "Worker pytan od klientow jest skonfigurowany."
+        : "Worker pytan od klientow jest wylaczony."
+      : "Modul pytan od klientow jest tymczasowo zaparkowany.",
+    "neutral",
+    questionsFeatureEnabled
+      ? questionsWorker?.enabled === true
+        ? `Interwal: ${questionsWorker?.intervalMinutes || 10} min | Powiadomienia: ${questionsWorker?.notificationsEnabled !== false ? "tak" : "nie"}`
+        : "Wlacz worker, aby uruchomic proces w tle."
+      : "Opcja jest chwilowo zablokowana i nie moze zostac wlaczona."
+  );
 
   if (initialsEl) {
     initialsEl.value = normalizeInitials(profile?.initials) || deriveInitials(profile?.fullName || "");
@@ -174,6 +260,32 @@ export function initSettingsModal({
   if (!backdrop) return;
   let idosellTestPassed = false;
 
+  async function refreshQuestionsWorkerStatus() {
+    try {
+      const status = await getIdoSellQuestionsWorkerStatus();
+      let type = "neutral";
+      if (status?.isRunning) type = "success";
+      if (status?.lastError) type = "error";
+
+      let text = status?.lastMessage || "Brak danych o workerze.";
+      if (status?.enabled === false) {
+        text = "Worker pytan od klientow jest wylaczony.";
+      } else if (status?.mode === "starting") {
+        text = "Worker uruchamia sie w tle.";
+      } else if (status?.isRunning) {
+        text = status?.lastMessage || "Worker dziala w tle.";
+      }
+
+      setQuestionsWorkerStatus(text, type, formatQuestionsWorkerMeta(status));
+    } catch (error) {
+      setQuestionsWorkerStatus(
+        "Nie udalo sie pobrac statusu workera.",
+        "error",
+        String(error?.message || error || "Nieznany blad.")
+      );
+    }
+  }
+
   function resetIdoSellTestState() {
     idosellTestPassed = false;
     const enabled = !!el("settingsIdoSellEnabled")?.checked;
@@ -185,6 +297,7 @@ export function initSettingsModal({
     await fillForm();
     const exchange = await getExchangeStatus?.();
     setExchangeInfo(buildExchangeLabel(exchange));
+    await refreshQuestionsWorkerStatus();
     setActiveTab("general");
     show();
   };
@@ -205,6 +318,10 @@ export function initSettingsModal({
   const idosellEnabledEl = el("settingsIdoSellEnabled");
   const idosellBaseUrlEl = el("settingsIdoSellBaseUrl");
   const idosellApiKeyEl = el("settingsIdoSellApiKey");
+  const questionsWorkerEnabledEl = el("settingsQuestionsWorkerEnabled");
+  const questionsWorkerNotificationsEl = el("settingsQuestionsWorkerNotifications");
+  const questionsWorkerStartWithSystemEl = el("settingsQuestionsWorkerStartWithSystem");
+  const questionsWorkerIntervalEl = el("settingsQuestionsWorkerInterval");
 
   if (fullNameEl && initialsEl) {
     fullNameEl.addEventListener("input", () => {
@@ -242,6 +359,24 @@ export function initSettingsModal({
     showToast(
       enabled ? "Włączono integrację IdoSell." : "Wyłączono integrację IdoSell.",
       { type: "info", ms: 2200 }
+    );
+  });
+
+  questionsWorkerEnabledEl?.addEventListener("change", () => {
+    if (questionsWorkerEnabledEl.disabled) {
+      questionsWorkerEnabledEl.checked = false;
+      return;
+    }
+    const enabled = !!questionsWorkerEnabledEl.checked;
+    setQuestionsWorkerSectionEnabled(enabled);
+    setQuestionsWorkerStatus(
+      enabled
+        ? "Worker pytan od klientow czeka na zapis ustawien."
+        : "Worker pytan od klientow jest wylaczony.",
+      "neutral",
+      enabled
+        ? "Zapisz ustawienia, aby uruchomic lub zaktualizowac proces w tle."
+        : "Proces w tle zostanie zatrzymany po zapisaniu ustawien."
     );
   });
 
@@ -359,6 +494,100 @@ export function initSettingsModal({
       updateIdoSellSaveButtonEnabled(true, false);
       setIdoSellStatus(`Nie udało się wykonać testu: ${String(e?.message || e)}`, "error");
       showToast("Nie udało się wykonać testu IdoSell API.", { type: "error", ms: 3200 });
+    }
+  });
+
+  el("btnSettingsSaveQuestionsWorker")?.addEventListener("click", async () => {
+    if (questionsWorkerEnabledEl?.disabled) {
+      setQuestionsWorkerStatus(
+        "Modul pytan od klientow jest tymczasowo zaparkowany.",
+        "neutral",
+        "Opcja jest chwilowo zablokowana i nie moze zostac wlaczona."
+      );
+      showToast("Modul pytan od klientow jest tymczasowo zablokowany.", {
+        type: "info",
+        ms: 2600,
+      });
+      return;
+    }
+
+    const enabled = !!questionsWorkerEnabledEl?.checked;
+    const notificationsEnabled = !!questionsWorkerNotificationsEl?.checked;
+    const startWithSystem = !!questionsWorkerStartWithSystemEl?.checked;
+    const intervalMinutes = Math.min(
+      1440,
+      Math.max(1, parseInt(questionsWorkerIntervalEl?.value || "10", 10) || 10)
+    );
+
+    if (questionsWorkerIntervalEl) {
+      questionsWorkerIntervalEl.value = String(intervalMinutes);
+    }
+
+    await setUserSettings({
+      integrations: {
+        idosell: {
+          customerQuestions: {
+            enabled,
+            notificationsEnabled,
+            startWithSystem,
+            intervalMinutes,
+          },
+        },
+      },
+    });
+
+    showToast(
+      enabled
+        ? "Zapisano ustawienia workera pytan klientow."
+        : "Wylaczono worker pytan klientow.",
+      { type: "info", ms: 2600 }
+    );
+    await refreshQuestionsWorkerStatus();
+  });
+
+  el("btnSettingsRestartQuestionsWorker")?.addEventListener("click", async () => {
+    if (questionsWorkerEnabledEl?.disabled) {
+      showToast("Modul pytan od klientow jest tymczasowo zablokowany.", {
+        type: "info",
+        ms: 2600,
+      });
+      return;
+    }
+
+    try {
+      await restartIdoSellQuestionsWorker();
+      showToast("Worker zostal uruchomiony ponownie.", { type: "info", ms: 2600 });
+      await refreshQuestionsWorkerStatus();
+    } catch (error) {
+      setQuestionsWorkerStatus(
+        "Nie udalo sie uruchomic workera ponownie.",
+        "error",
+        String(error?.message || error || "Nieznany blad.")
+      );
+      showToast("Nie udalo sie uruchomic workera ponownie.", { type: "error", ms: 3200 });
+    }
+  });
+
+  el("btnSettingsStopQuestionsWorker")?.addEventListener("click", async () => {
+    if (questionsWorkerEnabledEl?.disabled) {
+      showToast("Modul pytan od klientow jest tymczasowo zablokowany.", {
+        type: "info",
+        ms: 2600,
+      });
+      return;
+    }
+
+    try {
+      await stopIdoSellQuestionsWorker();
+      showToast("Worker zostal zatrzymany.", { type: "info", ms: 2400 });
+      await refreshQuestionsWorkerStatus();
+    } catch (error) {
+      setQuestionsWorkerStatus(
+        "Nie udalo sie zatrzymac workera.",
+        "error",
+        String(error?.message || error || "Nieznany blad.")
+      );
+      showToast("Nie udalo sie zatrzymac workera.", { type: "error", ms: 3200 });
     }
   });
 

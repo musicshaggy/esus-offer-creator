@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld("esusAPI", {
   settingsResetCounter: () => ipcRenderer.invoke("settings:resetCounter"),
   settingsClearAllData: () => ipcRenderer.invoke("settings:clearAllData"),
   settingsTestIdoSellConnection: (payload) => ipcRenderer.invoke("settings:testIdoSellConnection", payload),
+  idosellQuestionsWorkerGetStatus: () => ipcRenderer.invoke("idosellQuestionsWorker:getStatus"),
+  idosellQuestionsWorkerStart: () => ipcRenderer.invoke("idosellQuestionsWorker:start"),
+  idosellQuestionsWorkerStop: () => ipcRenderer.invoke("idosellQuestionsWorker:stop"),
+  idosellQuestionsWorkerRestart: () => ipcRenderer.invoke("idosellQuestionsWorker:restart"),
 
   // Offers storage
   offersList: () => ipcRenderer.invoke("offers:list"),
@@ -33,11 +37,14 @@ contextBridge.exposeInMainWorld("esusAPI", {
   clientDeleteByNip: (nip) => ipcRenderer.invoke("clients:deleteByNip", nip),
   idosellSearchProducts: (query, preferredCurrency) =>
     ipcRenderer.invoke("idosell:searchProducts", { query, preferredCurrency }),
+  idosellOrdersList: (payload) => ipcRenderer.invoke("idosell:ordersList", payload),
+  idosellOrderGet: (payload) => ipcRenderer.invoke("idosell:orderGet", payload),
 
   // Optional: file operations already implemented in main.js
   fileSaveJson: (args) => ipcRenderer.invoke("file:saveJson", args),
   fileLoadJson: () => ipcRenderer.invoke("file:loadJson"),
   exportExcel: (args) => ipcRenderer.invoke("export:excel", args),
+  exportPdfFromHtml: (args) => ipcRenderer.invoke("export:pdfFromHtml", args),
   getAppVersion: () => ipcRenderer.invoke("app:getVersion"),
 
   // Offer sequencing (gap-filling)

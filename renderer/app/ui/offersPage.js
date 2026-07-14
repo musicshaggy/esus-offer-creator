@@ -4,6 +4,7 @@ import { itemNetAfterDiscount } from "../calc/pricing.js";
 import { showToast, showToastAction } from "../ui/toast.js";
 import { getExchange } from "../state/store.js";
 import { initPmReportPanel } from "./pmReport.js";
+import { initIaiOrdersPanel } from "./iaiOrders.js";
 
 function pickOfferNo(row) {
   return (
@@ -388,41 +389,63 @@ async function loadOffers() {
 export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}) {
   const searchEl = qs("offersSearch");
   const btnRefresh = qs("btnOffersRefresh");
+  const btnIaiOrders = qs("btnOffersIaiOrders");
   const btnBack = qs("btnOffersBack");
   const btnNew = qs("btnOffersNew");
-  const btnReportBack = qs("btnOffersReportBack");
+  const btnSubviewBack = qs("btnOffersReportBack");
   const listView = qs("offersListView");
   const reportView = qs("offersPmReportView");
+  const ordersView = qs("offersIaiOrdersView");
   const countPill = qs("offersCount")?.closest(".pill");
   const sortButtons = Array.from(document.querySelectorAll(".offers-sort-btn"));
   const pmReport = initPmReportPanel();
+  const ordersPanel = initIaiOrdersPanel({
+    onAvailabilityChange: (ready) => {
+      if (btnIaiOrders) {
+        btnIaiOrders.disabled = !ready;
+        btnIaiOrders.title = ready
+          ? "Otworz zamowienia IAI"
+          : "Najpierw skonfiguruj integracje IdoSell.";
+      }
+    },
+  });
 
   cloneTopbarHeader();
 
   let all = [];
   let sortState = { key: "created", dir: "desc" };
 
-  function syncTopbarVisibility(isReportView) {
-    if (searchEl) searchEl.style.display = isReportView ? "none" : "";
-    if (btnNew) btnNew.style.display = isReportView ? "none" : "inline-flex";
-    if (countPill) countPill.style.display = isReportView ? "none" : "inline-flex";
+  function syncTopbarVisibility(mode = "list") {
+    const isList = mode === "list";
+    if (searchEl) searchEl.style.display = isList ? "" : "none";
+    if (btnNew) btnNew.style.display = isList ? "inline-flex" : "none";
+    if (countPill) countPill.style.display = isList ? "inline-flex" : "none";
+    if (btnRefresh) btnRefresh.style.display = isList ? "inline-flex" : "none";
+    if (btnIaiOrders) btnIaiOrders.style.display = isList ? "inline-flex" : "none";
+    if (btnSubviewBack) btnSubviewBack.style.display = isList ? "none" : "inline-flex";
   }
 
   function showListView() {
     listView?.classList.add("is-active");
     reportView?.classList.remove("is-active");
-    if (btnRefresh) btnRefresh.style.display = "inline-flex";
-    if (btnReportBack) btnReportBack.style.display = "none";
-    syncTopbarVisibility(false);
+    ordersView?.classList.remove("is-active");
+    syncTopbarVisibility("list");
   }
 
   async function showReportView() {
     listView?.classList.remove("is-active");
     reportView?.classList.add("is-active");
-    if (btnRefresh) btnRefresh.style.display = "none";
-    if (btnReportBack) btnReportBack.style.display = "inline-flex";
-    syncTopbarVisibility(true);
+    ordersView?.classList.remove("is-active");
+    syncTopbarVisibility("report");
     await pmReport.activate();
+  }
+
+  async function showOrdersView() {
+    listView?.classList.remove("is-active");
+    reportView?.classList.remove("is-active");
+    ordersView?.classList.add("is-active");
+    syncTopbarVisibility("orders");
+    await ordersPanel.activate();
   }
 
   async function refresh() {
@@ -548,9 +571,12 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
   }
 
   btnRefresh?.addEventListener("click", () => {
-    showReportView();
+    void showReportView();
   });
-  btnReportBack?.addEventListener("click", showListView);
+  btnIaiOrders?.addEventListener("click", () => {
+    void showOrdersView();
+  });
+  btnSubviewBack?.addEventListener("click", showListView);
   btnBack?.addEventListener("click", () => onBack?.());
   btnNew?.addEventListener("click", () => onNewOffer?.());
   searchEl?.addEventListener("input", applyFilter);
@@ -570,6 +596,11 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
   });
 
   window.addEventListener("resize", resetOffersTableScroll);
+  window.addEventListener("esus:settingsChanged", () => {
+    void ordersPanel.syncAvailability();
+  });
 
-  return { refresh, showListView, showReportView };
+  void ordersPanel.syncAvailability();
+
+  return { refresh, showListView, showReportView, showOrdersView };
 }

@@ -33,7 +33,15 @@
       border:1px solid var(--line);
       padding:2px 8px; border-radius:999px;
     }
-    .actions{display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end}
+    .actions{
+      display:flex;
+      gap:10px;
+      flex-wrap:nowrap;
+      justify-content:flex-end;
+      align-items:center;
+      flex:1 1 auto;
+      min-width:0;
+    }
     button{
       appearance:none;
       border:1px solid rgba(0,154,255,.45);
