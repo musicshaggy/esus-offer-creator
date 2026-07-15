@@ -202,6 +202,11 @@ function cloneTopbarHeader() {
 function qs(id) { return document.getElementById(id); }
 function setCount(n) { qs("offersCount").textContent = String(n); }
 function setEmpty(isEmpty) { qs("offersEmpty").style.display = isEmpty ? "block" : "none"; }
+function setOffersLoading(isLoading) {
+  const loading = qs("offersLoading");
+  if (!loading) return;
+  loading.hidden = !isLoading;
+}
 
 function resetOffersTableScroll() {
   const wrap = qs("offersTableWrap");
@@ -404,8 +409,8 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
       if (btnIaiOrders) {
         btnIaiOrders.disabled = !ready;
         btnIaiOrders.title = ready
-          ? "Otworz zamowienia IAI"
-          : "Najpierw skonfiguruj integracje IdoSell.";
+          ? "Otwórz zamówienia IAI"
+          : "Najpierw skonfiguruj integrację IdoSell.";
       }
     },
   });
@@ -414,6 +419,7 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
 
   let all = [];
   let sortState = { key: "created", dir: "desc" };
+  let refreshRequest = 0;
 
   function syncTopbarVisibility(mode = "list") {
     const isList = mode === "list";
@@ -449,10 +455,19 @@ export function initOffersSubpage({ onBack, onOpenOfferLoaded, onNewOffer } = {}
   }
 
   async function refresh() {
+    const requestId = ++refreshRequest;
     showListView();
-    all = await loadOffers();
-    applyFilter();
-    resetOffersTableScroll();
+    setOffersLoading(true);
+    setEmpty(false);
+    try {
+      const loadedOffers = await loadOffers();
+      if (requestId !== refreshRequest) return;
+      all = loadedOffers;
+      applyFilter();
+      resetOffersTableScroll();
+    } finally {
+      if (requestId === refreshRequest) setOffersLoading(false);
+    }
   }
 
   function syncSortUi() {

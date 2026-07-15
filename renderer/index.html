@@ -75,27 +75,31 @@
 
 
       <div id="headerActionsOffers" class="header-actions-offers">
-        <span class="pill" title="Liczba ofert">Liczba ofert: <b id="offersCount">0</b></span>
+        <span class="pill offers-count-pill" title="Liczba ofert">
+          <span>Oferty</span>
+          <b id="offersCount">0</b>
+        </span>
         <input id="offersSearch" type="text" placeholder="Szukaj: numer, klient, status…" />
-        <button id="btnOffersNew" class="secondary">
+
+        <button id="btnOffersNew" class="secondary offers-header-action" title="Nowa oferta" aria-label="Nowa oferta">
 		  <i class="fa-solid fa-file-circle-plus"></i>
-		  Nowa oferta
+		  <span class="offers-header-action-label">Nowa oferta</span>
 		</button>
-        <button id="btnOffersRefresh" class="secondary">
+        <button id="btnOffersRefresh" class="secondary offers-header-action" title="Raport PM" aria-label="Raport PM">
 		  <i class="fa-solid fa-chart-column"></i>
-		  Raport PM
+		  <span class="offers-header-action-label">Raport PM</span>
 		</button>
-        <button id="btnOffersIaiOrders" class="secondary" disabled title="Najpierw skonfiguruj integrację IdoSell.">
+        <button id="btnOffersIaiOrders" class="secondary offers-header-action" disabled title="Najpierw skonfiguruj integrację IdoSell." aria-label="Zamówienia IAI">
 		  <i class="fa-solid fa-basket-shopping"></i>
-		  Otwórz zamówienie IAI
+		  <span class="offers-header-action-label">Zamówienia IAI</span>
 		</button>
-        <button id="btnOffersReportBack" class="secondary" style="display:none;">
+        <button id="btnOffersReportBack" class="secondary offers-header-action" style="display:none;" title="Wróć do listy ofert" aria-label="Wróć do listy ofert">
 		  <i class="fa-solid fa-arrow-left"></i>
-		  Wróć do listy
+		  <span class="offers-header-action-label">Lista ofert</span>
 		</button>
-        <button id="btnOffersBack" class="secondary">
+        <button id="btnOffersBack" class="secondary offers-header-action offers-header-back" title="Powrót" aria-label="Powrót">
 		  <i class="fa-solid fa-arrow-left"></i>
-		  Powrót
+		  <span class="offers-header-action-label">Powrót</span>
 		</button>
       </div>
       <button id="btnAppSettings" class="secondary app-settings-btn" title="Ustawienia" aria-label="Ustawienia">
@@ -468,6 +472,10 @@
 
       <div class="offers-card">
         <div id="offersListView" class="offers-subview is-active">
+          <div id="offersLoading" class="offers-loading" role="status" aria-live="polite">
+            <span class="offers-loading-spinner" aria-hidden="true"></span>
+            <span>Ładowanie ofert...</span>
+          </div>
           <div id="offersEmpty" class="offers-empty" style="display:none;">Brak zapisanych ofert.</div>
           <div id="offersTableWrap" class="offers-table-wrap">
             <table class="offers-table" aria-label="Lista ofert">
