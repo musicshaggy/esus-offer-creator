@@ -1115,10 +1115,13 @@ export async function generatePdf({ onBefore } = {}) {
   const validUntil = validUntilRaw ? formatDate(validUntilRaw, lang) : t(lang, "missingData");
 
   const estimateDaysRaw = (el("estimateDays")?.value ?? "").toString().trim();
-  const hasLeadTime = estimateDaysRaw !== "" && !isNaN(parseInt(estimateDaysRaw, 10));
-  const leadTimeText = hasLeadTime
-    ? `${Math.max(0, parseInt(estimateDaysRaw, 10))} ${t(lang, "businessDays")}`
-    : "";
+  const leadTimeValue = estimateDaysRaw
+    .replace(/\s*[–—-]\s*/g, "-")
+    .replace(/\s+/g, " ");
+  const hasLeadTime = leadTimeValue !== "";
+  const leadTimeText = /^\d+(?:-\d+)?$/.test(leadTimeValue)
+    ? `${leadTimeValue} ${t(lang, "businessDays")}`
+    : leadTimeValue;
 
   const termRows = [
     { label: labelNoColon(lang, "payment"), value: payText },

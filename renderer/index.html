@@ -310,8 +310,8 @@
           <input id="shippingNet" type="hidden" value="0" />
         </div>
 		<div>
-		  <label>Szacunkowy czas realizacji (dni robocze)</label>
-		  <input id="estimateDays" type="number" min="0" step="1" placeholder="np. 2" />
+		  <label for="estimateDays">Szacunkowy czas realizacji</label>
+		  <input id="estimateDays" type="text" inputmode="text" maxlength="60" autocomplete="off" placeholder="np. 2-3 dni robocze" />
 		</div>
         <div>
           <label>Do kiedy oferta jest ważna</label>
@@ -737,6 +737,21 @@
                   </label>
                   <div id="pmReportCsvMeta" class="pmReportCsvMeta">Brak pliku CSV.</div>
                 </div>
+                <div class="pmReportArchiveRow">
+                  <button type="button" id="pmReportSaveSubiektPeriod" class="secondary">
+                    <i class="fa-solid fa-box-archive"></i>
+                    Zapisz dane okresu
+                  </button>
+                  <label class="pmReportArchiveSelectLabel">
+                    <span>Zapisane okresy</span>
+                    <select id="pmReportSubiektArchive" aria-label="Zapisane okresy danych z Subiekta">
+                      <option value="">Brak zapisanych okresów</option>
+                    </select>
+                  </label>
+                  <button type="button" id="pmReportDeleteSubiektPeriod" class="secondary" title="Usuń wybrany okres" aria-label="Usuń wybrany okres">
+                    <i class="fa-solid fa-trash"></i>
+                  </button>
+                </div>
                 <label class="pmReportField">
                   <span>Surowa tabela CSV z Subiekta</span>
                   <textarea id="pmReportCsvRaw" class="pmReportTextarea pmReportTextarea--compact" placeholder="Wklej tutaj eksport CSV z Subiekta."></textarea>
@@ -786,7 +801,7 @@
                 <div class="pmReportPanelHead">
                   <div>
                     <h3>Wnioski zarządcze z Subiekta</h3>
-                    <p>Pokazujemy wynik PM, rentowność grup i najlepiej rotujące produkty. Porównanie okres do okresu dochodzi przy imporcie kolejnych danych historycznych.</p>
+                    <p>Pokazujemy wynik PM, rentowność grup i najlepiej rotujące produkty. Porównanie okres do okresu korzysta z zapisanych danych historycznych.</p>
                   </div>
                 </div>
                 <div class="pmReportChartGrid">
@@ -799,7 +814,13 @@
                   <div class="pmReportChartCard">
                     <div class="pmReportChartTitle">Najbardziej chodliwe towary</div>
                     <div class="pmReportChartPlaceholder" id="pmReportMomPlaceholder">
-                      Lista pojawi sie po imporcie i parsowaniu CSV.
+                      Lista pojawi się po imporcie i parsowaniu CSV.
+                    </div>
+                  </div>
+                  <div class="pmReportChartCard pmReportChartCard--wide">
+                    <div class="pmReportChartTitle">Porównanie okres do okresu - Subiekt</div>
+                    <div class="pmReportChartPlaceholder" id="pmReportSubiektCompare">
+                      Zapisz dane poprzedniego okresu, aby zobaczyć porównanie.
                     </div>
                   </div>
                 </div>

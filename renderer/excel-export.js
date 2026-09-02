@@ -133,7 +133,10 @@ export async function exportOfferToExcel(payload) {
 
   const payText = payload.paymentText ?? "";
   const validUntil = payload.validUntil ?? "";
-  const estimateDays = payload.estimateDays ?? "";
+  const estimateDays = String(payload.estimateDays ?? "").trim();
+  const estimateText = /^\d+(?:\s*[–—-]\s*\d+)?$/.test(estimateDays)
+    ? `${estimateDays.replace(/\s*[–—-]\s*/g, "-")} dni rob.`
+    : estimateDays;
   const extra = payload.termsExtra ?? "";
   const notes = payload.creatorNotes ?? "";
 
@@ -258,7 +261,7 @@ export async function exportOfferToExcel(payload) {
   ws.mergeCells("L2:S2");
   ws.getCell("L2").value = `Platnosc: ${payText || "-"}`;
   ws.mergeCells("L3:S3");
-  ws.getCell("L3").value = `Waznosc: ${validUntil || "-"}` + (estimateDays ? ` | Czas realizacji: ${estimateDays} dni rob.` : "");
+  ws.getCell("L3").value = `Waznosc: ${validUntil || "-"}` + (estimateText ? ` | Czas realizacji: ${estimateText}` : "");
   ws.mergeCells("L4:S4");
   ws.getCell("L4").value = `Wysylka netto: ${shippingNet.toFixed(2)} ${offerCurrency}`;
 

@@ -1108,7 +1108,7 @@ function initUpdateToasts() {
   window.esusAPI.onUpdateAvailable((d) => {
     if (downloading) return;
     const v = d?.version ? ` v${d.version}` : "";
-    showToastAction(`DostÄ™pna aktualizacja${v}.`, {
+    showToastAction(`Dost\u0119pna aktualizacja${v}.`, {
       type: "info",
       ms: 15000,
       actionLabel: "Pobierz",
@@ -1119,13 +1119,13 @@ function initUpdateToasts() {
         try {
           downloading = true;
           lastPct = -1;
-          showToastProgress("Pobieranie aktualizacjiâ€¦");
+          showToastProgress("Pobieranie aktualizacji\u2026");
           await window.esusAPI.updateDownload();
         } catch (e) {
           downloading = false;
           endToastProgress();
           console.warn(e);
-          showToast("Nie udaĹ‚o siÄ™ pobraÄ‡ aktualizacji.", { type: "error", ms: 4500 });
+          showToast("Nie uda\u0142o si\u0119 pobra\u0107 aktualizacji.", { type: "error", ms: 4500 });
         }
       },
     });
@@ -1150,7 +1150,7 @@ function initUpdateToasts() {
       type: "info",
       ms: 0,
       actionLabel: "Uruchom ponownie",
-      secondaryLabel: "PĂłĹşniej",
+      secondaryLabel: "P\u00f3\u017aniej",
       onSecondary: async () => {},
       onAction: async () => {
         await window.esusAPI.updateQuitAndInstall();
@@ -1162,7 +1162,7 @@ function initUpdateToasts() {
     downloading = false;
     endToastProgress();
     console.warn("Updater error:", d);
-    showToast("BĹ‚Ä…d aktualizacji (szczegĂłĹ‚y w konsoli).", { type: "error", ms: 5000 });
+    showToast("B\u0142\u0105d aktualizacji (szczeg\u00f3\u0142y w konsoli).", { type: "error", ms: 5000 });
   });
 
   window.esusAPI.updateGetStatus?.()

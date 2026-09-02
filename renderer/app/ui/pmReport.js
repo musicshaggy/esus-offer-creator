@@ -5,19 +5,20 @@ import { escapeHtml, moneyCcy, toNumber, ymdToPL } from "../utils/format.js";
 import { showToast } from "./toast.js";
 
 const STORAGE_KEY = "esus.pmReport.v1";
+const MAX_SUBIEKT_PERIODS = 48;
 const MONTH_LABELS = [
-  "styczen",
+  "styczeń",
   "luty",
   "marzec",
-  "kwiecien",
+  "kwiecień",
   "maj",
   "czerwiec",
   "lipiec",
-  "sierpien",
-  "wrzesien",
-  "pazdziernik",
+  "sierpień",
+  "wrzesień",
+  "październik",
   "listopad",
-  "grudzien",
+  "grudzień",
 ];
 
 function q(id) {
@@ -209,6 +210,51 @@ function sanitizeSelectionIds(ids) {
   return Array.from(new Set(ids.map((value) => String(value || "").trim()).filter(Boolean)));
 }
 
+function subiektPeriodKey(period) {
+  const from = normalizeYmd(period?.from);
+  const to = normalizeYmd(period?.to);
+  return from && to ? `${from}_${to}` : "";
+}
+
+function sanitizeSubiektPeriods(value) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter((entry) => subiektPeriodKey(entry?.period))
+    .map((entry) => ({
+      id: subiektPeriodKey(entry.period),
+      period: {
+        mode: entry?.period?.mode === "month" ? "month" : "range",
+        from: normalizeYmd(entry?.period?.from),
+        to: normalizeYmd(entry?.period?.to),
+        days: Math.max(0, Number(entry?.period?.days || 0)),
+        label: String(entry?.period?.label || "-"),
+      },
+      savedAt: String(entry?.savedAt || ""),
+      csvFileName: String(entry?.csvFileName || ""),
+      pmSalary: round2(entry?.pmSalary || 0),
+      metrics: {
+        totalQty: round2(entry?.metrics?.totalQty || 0),
+        totalGross: round2(entry?.metrics?.totalGross || 0),
+        totalNet: round2(entry?.metrics?.totalNet || 0),
+        totalCost: round2(entry?.metrics?.totalCost || 0),
+        totalProfit: round2(entry?.metrics?.totalProfit || 0),
+        weightedMarginPct: round2(entry?.metrics?.weightedMarginPct || 0),
+        roiPct: round2(entry?.metrics?.roiPct || 0),
+        profitAfterCompanyCosts: round2(entry?.metrics?.profitAfterCompanyCosts || 0),
+        pmCost: round2(entry?.metrics?.pmCost || 0),
+        pmNetResult: round2(entry?.metrics?.pmNetResult || 0),
+        uniqueProducts: Math.max(0, Number(entry?.metrics?.uniqueProducts || 0)),
+        groupsCount: Math.max(0, Number(entry?.metrics?.groupsCount || 0)),
+      },
+      groups: Array.isArray(entry?.groups) ? entry.groups.slice(0, 12) : [],
+      topProducts: Array.isArray(entry?.topProducts) ? entry.topProducts.slice(0, 10) : [],
+      bestSellers: Array.isArray(entry?.bestSellers) ? entry.bestSellers.slice(0, 10) : [],
+    }))
+    .sort((a, b) => String(b.period.from).localeCompare(String(a.period.from)))
+    .slice(0, MAX_SUBIEKT_PERIODS);
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -224,6 +270,7 @@ function loadState() {
       realizedOfferIds: sanitizeSelectionIds(parsed?.realizedOfferIds),
       csvRaw: String(parsed?.csvRaw || ""),
       csvFileName: String(parsed?.csvFileName || ""),
+      subiektPeriods: sanitizeSubiektPeriods(parsed?.subiektPeriods),
     };
   } catch {
     return {
@@ -237,6 +284,7 @@ function loadState() {
       realizedOfferIds: [],
       csvRaw: "",
       csvFileName: "",
+      subiektPeriods: [],
     };
   }
 }
@@ -253,6 +301,7 @@ function saveState(state) {
     realizedOfferIds: sanitizeSelectionIds(state.realizedOfferIds),
     csvRaw: state.csvRaw,
     csvFileName: state.csvFileName,
+    subiektPeriods: sanitizeSubiektPeriods(state.subiektPeriods),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 }
@@ -686,8 +735,97 @@ function buildSubiektInsights(rawText, period, pmSalary) {
     bestSellers,
     topProducts,
     attentionProducts,
-    historicalComparisonNote: "Porównanie okres do okresu wymaga załadowania danych z kolejnego eksportu historycznego.",
+    historicalComparisonNote: "Porównanie okres do okresu korzysta z archiwum zapisanych danych Subiekta.",
   };
+}
+
+function createSubiektPeriodSnapshot(period, insights, state) {
+  if (!insights || !subiektPeriodKey(period)) return null;
+
+  return {
+    id: subiektPeriodKey(period),
+    period: {
+      mode: period.mode === "month" ? "month" : "range",
+      from: period.from,
+      to: period.to,
+      days: period.days,
+      label: period.label,
+    },
+    savedAt: new Date().toISOString(),
+    csvFileName: String(state?.csvFileName || ""),
+    pmSalary: round2(state?.pmSalary || 0),
+    metrics: {
+      totalQty: insights.totalQty,
+      totalGross: insights.totalGross,
+      totalNet: insights.totalNet,
+      totalCost: insights.totalCost,
+      totalProfit: insights.totalProfit,
+      weightedMarginPct: insights.weightedMarginPct,
+      roiPct: insights.roiPct,
+      profitAfterCompanyCosts: insights.profitAfterCompanyCosts,
+      pmCost: insights.pmCost,
+      pmNetResult: insights.pmNetResult,
+      uniqueProducts: insights.uniqueProducts,
+      groupsCount: insights.groupsCount,
+    },
+    groups: insights.groups.slice(0, 12),
+    topProducts: insights.topProducts.slice(0, 10),
+    bestSellers: insights.bestSellers.slice(0, 10),
+  };
+}
+
+function findSubiektPeriodSnapshot(periods, period) {
+  const key = subiektPeriodKey(period);
+  if (!key) return null;
+  return sanitizeSubiektPeriods(periods).find((entry) => entry.id === key) || null;
+}
+
+function upsertSubiektPeriodSnapshot(state, period, insights) {
+  const snapshot = createSubiektPeriodSnapshot(period, insights, state);
+  if (!snapshot) return null;
+
+  state.subiektPeriods = sanitizeSubiektPeriods([
+    snapshot,
+    ...(Array.isArray(state.subiektPeriods)
+      ? state.subiektPeriods.filter((entry) => entry?.id !== snapshot.id)
+      : []),
+  ]);
+  saveState(state);
+  return snapshot;
+}
+
+function buildSubiektComparison(current, previousSnapshot, previousPeriod) {
+  const previous = previousSnapshot?.metrics || null;
+  if (!current || !previous) {
+    return {
+      available: false,
+      previousPeriod,
+      previousSnapshot: null,
+      current,
+      previous: null,
+    };
+  }
+
+  return {
+    available: true,
+    previousPeriod,
+    previousSnapshot,
+    current,
+    previous,
+    netDeltaPct: calcDeltaPct(current.totalNet, previous.totalNet),
+    profitDeltaPct: calcDeltaPct(current.totalProfit, previous.totalProfit),
+    roiDeltaPct: round2(current.roiPct - previous.roiPct),
+    pmNetDeltaPct: calcDeltaPct(current.pmNetResult, previous.pmNetResult),
+  };
+}
+
+function formatPointDelta(value) {
+  const number = toNumber(value);
+  const sign = number > 0 ? "+" : "";
+  return `${sign}${number.toLocaleString("pl-PL", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })} p.p.`;
 }
 
 function renderBarList(items, maxValue, valueFormatter, metaFormatter) {
@@ -726,6 +864,7 @@ function buildSummary(period, state, offerRows, previousOfferRows) {
   const pmCost = round2(toNumber(state.pmSalary) * pmCostFactor);
   const subiekt = buildSubiektInsights(state.csvRaw, period, state.pmSalary);
   const previousPeriod = getPreviousPeriod(period);
+  const previousSubiektSnapshot = findSubiektPeriodSnapshot(state.subiektPeriods, previousPeriod);
   const currentAll = aggregateOfferRows(offerRows);
   const previousAll = aggregateOfferRows(previousOfferRows);
 
@@ -742,6 +881,7 @@ function buildSummary(period, state, offerRows, previousOfferRows) {
     pmCostFactor,
     pmCost,
     subiekt,
+    subiektComparison: buildSubiektComparison(subiekt, previousSubiektSnapshot, previousPeriod),
     offerComparison: {
       currentAll,
       previousAll,
@@ -754,6 +894,7 @@ function buildSummary(period, state, offerRows, previousOfferRows) {
 
 function buildMailHtml(summary, state) {
   const subiekt = summary.subiekt;
+  const subiektComparison = summary.subiektComparison;
   const rowsHtml = summary.realized.length
     ? summary.realized
         .map(
@@ -936,6 +1077,28 @@ function buildMailHtml(summary, state) {
           : ""
       }
 
+      <h3 style="margin:0 0 10px;font-size:18px;">Porównanie Subiekta do poprzedniego okresu</h3>
+      ${
+        subiektComparison?.available
+          ? `<table style="width:100%;border-collapse:collapse;margin:0 0 24px;">
+              <thead>
+                <tr style="background:#0f172a;color:#fff;">
+                  <th style="padding:10px 12px;text-align:left;">Wskaźnik</th>
+                  <th style="padding:10px 12px;text-align:right;">Bieżący okres</th>
+                  <th style="padding:10px 12px;text-align:right;">Poprzedni okres</th>
+                  <th style="padding:10px 12px;text-align:right;">Zmiana</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;">Sprzedaż netto</td><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;text-align:right;">${escapeHtml(moneyCcy(subiekt.totalNet, "PLN"))}</td><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;text-align:right;">${escapeHtml(moneyCcy(subiektComparison.previous.totalNet, "PLN"))}</td><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;text-align:right;">${escapeHtml(formatDeltaPct(subiektComparison.netDeltaPct))}</td></tr>
+                <tr><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;">Zysk</td><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;text-align:right;">${escapeHtml(moneyCcy(subiekt.totalProfit, "PLN"))}</td><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;text-align:right;">${escapeHtml(moneyCcy(subiektComparison.previous.totalProfit, "PLN"))}</td><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;text-align:right;">${escapeHtml(formatDeltaPct(subiektComparison.profitDeltaPct))}</td></tr>
+                <tr><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;">ROI</td><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;text-align:right;">${escapeHtml(formatPercent(subiekt.roiPct))}</td><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;text-align:right;">${escapeHtml(formatPercent(subiektComparison.previous.roiPct))}</td><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;text-align:right;">${escapeHtml(formatPointDelta(subiektComparison.roiDeltaPct))}</td></tr>
+                <tr><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;">Wynik PM netto</td><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;text-align:right;">${escapeHtml(moneyCcy(subiekt.pmNetResult, "PLN"))}</td><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;text-align:right;">${escapeHtml(moneyCcy(subiektComparison.previous.pmNetResult, "PLN"))}</td><td style="padding:10px 12px;border-bottom:1px solid #dbe3f0;text-align:right;">${escapeHtml(formatDeltaPct(subiektComparison.pmNetDeltaPct))}</td></tr>
+              </tbody>
+            </table>`
+          : `<p style="margin:0 0 24px;color:#64748b;">Brak zapisanych danych dla poprzedniego okresu: ${escapeHtml(summary.previousPeriod.label)}.</p>`
+      }
+
       <h2 style="margin:0 0 10px;font-size:20px;">Grupy towarowe</h2>
       <table style="width:100%;border-collapse:collapse;margin:0 0 24px;">
         <thead>
@@ -992,6 +1155,9 @@ function buildMailHtml(summary, state) {
               <li>Netto z CSV: ${escapeHtml(moneyCcy(subiekt?.totalNet || 0, "PLN"))}</li>
               <li>Zysk z CSV (G): ${escapeHtml(moneyCcy(subiekt?.totalProfit || 0, "PLN"))}</li>
               <li>Wynik PM netto: ${escapeHtml(moneyCcy(subiekt?.pmNetResult || 0, "PLN"))}</li>
+              <li>Zmiana netto okres/okres: ${escapeHtml(subiektComparison?.available ? formatDeltaPct(subiektComparison.netDeltaPct) : "brak danych poprzedniego okresu")}</li>
+              <li>Zmiana zysku okres/okres: ${escapeHtml(subiektComparison?.available ? formatDeltaPct(subiektComparison.profitDeltaPct) : "brak danych poprzedniego okresu")}</li>
+              <li>Zmiana ROI okres/okres: ${escapeHtml(subiektComparison?.available ? formatPointDelta(subiektComparison.roiDeltaPct) : "brak danych poprzedniego okresu")}</li>
             </ul>
           </td>
         </tr>
@@ -1156,6 +1322,38 @@ async function exportPdf(summary, state) {
 
     doc.setFont("NotoSans", "bold");
     doc.setFontSize(12);
+    doc.text("Porównanie Subiekta do poprzedniego okresu", marginX, cursorY);
+    cursorY += 4;
+    if (summary.subiektComparison?.available) {
+      const previous = summary.subiektComparison.previous;
+      doc.autoTable({
+        startY: cursorY,
+        theme: "grid",
+        headStyles: { fillColor: [15, 23, 42], textColor: 255, font: "NotoSans", fontStyle: "bold" },
+        styles: { font: "NotoSans", fontSize: 8.4, cellPadding: 2.1, overflow: "linebreak" },
+        head: [["Wskaźnik", "Bieżący okres", "Poprzedni okres", "Zmiana"]],
+        body: [
+          ["Sprzedaż netto", moneyCcy(subiekt.totalNet, "PLN"), moneyCcy(previous.totalNet, "PLN"), formatDeltaPct(summary.subiektComparison.netDeltaPct)],
+          ["Zysk", moneyCcy(subiekt.totalProfit, "PLN"), moneyCcy(previous.totalProfit, "PLN"), formatDeltaPct(summary.subiektComparison.profitDeltaPct)],
+          ["ROI", formatPercent(subiekt.roiPct), formatPercent(previous.roiPct), formatPointDelta(summary.subiektComparison.roiDeltaPct)],
+          ["Wynik PM netto", moneyCcy(subiekt.pmNetResult, "PLN"), moneyCcy(previous.pmNetResult, "PLN"), formatDeltaPct(summary.subiektComparison.pmNetDeltaPct)],
+        ],
+      });
+      cursorY = (doc.lastAutoTable?.finalY || cursorY) + 8;
+    } else {
+      doc.setFont("NotoSans", "normal");
+      doc.setFontSize(9.5);
+      doc.text(`Brak zapisanych danych dla poprzedniego okresu: ${summary.previousPeriod.label}.`, marginX, cursorY + 2);
+      cursorY += 10;
+    }
+
+    if (cursorY > 220) {
+      doc.addPage();
+      cursorY = 18;
+    }
+
+    doc.setFont("NotoSans", "bold");
+    doc.setFontSize(12);
     doc.text("Grupy towarowe", marginX, cursorY);
     cursorY += 4;
     doc.autoTable({
@@ -1237,6 +1435,7 @@ async function exportPdf(summary, state) {
   [
     `Oferty z programu: ${summary.realizedCount} zrealizowane, brutto ${moneyCcy(summary.sumGrossPln, "PLN")}, zysk netto ${moneyCcy(summary.profitNetPln, "PLN")}`,
     `Subiekt: netto ${moneyCcy(subiekt?.totalNet || 0, "PLN")}, zysk G ${moneyCcy(subiekt?.totalProfit || 0, "PLN")}, wynik PM netto ${moneyCcy(subiekt?.pmNetResult || 0, "PLN")}`,
+    `Subiekt okres/okres: ${summary.subiektComparison?.available ? `netto ${formatDeltaPct(summary.subiektComparison.netDeltaPct)}, zysk ${formatDeltaPct(summary.subiektComparison.profitDeltaPct)}, ROI ${formatPointDelta(summary.subiektComparison.roiDeltaPct)}` : "brak danych poprzedniego okresu"}`,
     "Uwaga: sekcja ofert i sekcja Subiekt są prezentowane osobno i nie są sumowane między sobą.",
   ].forEach((line) => {
     const lines = doc.splitTextToSize(line, 180);
@@ -1361,12 +1560,16 @@ export function initPmReportPanel() {
     csvFile: q("pmReportCsvFile"),
     csvRaw: q("pmReportCsvRaw"),
     csvMeta: q("pmReportCsvMeta"),
+    saveSubiektPeriodBtn: q("pmReportSaveSubiektPeriod"),
+    subiektArchive: q("pmReportSubiektArchive"),
+    deleteSubiektPeriodBtn: q("pmReportDeleteSubiektPeriod"),
     subiektStats: q("pmReportSubiektStats"),
     groupsBody: q("pmReportGroupsBody"),
     attentionBody: q("pmReportAttentionBody"),
     topProductsBody: q("pmReportTopProductsBody"),
     roiPlaceholder: q("pmReportRoiPlaceholder"),
     momPlaceholder: q("pmReportMomPlaceholder"),
+    subiektCompare: q("pmReportSubiektCompare"),
     finalSummary: q("pmReportFinalSummary"),
   };
 
@@ -1410,8 +1613,55 @@ export function initPmReportPanel() {
     if (refs.csvMeta) refs.csvMeta.textContent = `${source}${extra}`;
   }
 
+  function renderSubiektArchive(preferredId = "") {
+    if (!refs.subiektArchive) return;
+    const periods = sanitizeSubiektPeriods(state.subiektPeriods);
+    const currentValue = preferredId || refs.subiektArchive.value;
+
+    refs.subiektArchive.innerHTML = periods.length
+      ? periods
+          .map((entry) => {
+            const savedDate = normalizeYmd(entry.savedAt);
+            const suffix = savedDate ? ` | zapis: ${ymdToPL(savedDate)}` : "";
+            return `<option value="${escapeHtml(entry.id)}">${escapeHtml(`${entry.period.label}${suffix}`)}</option>`;
+          })
+          .join("")
+      : `<option value="">Brak zapisanych okresów</option>`;
+
+    if (periods.some((entry) => entry.id === currentValue)) {
+      refs.subiektArchive.value = currentValue;
+    }
+    if (refs.deleteSubiektPeriodBtn) refs.deleteSubiektPeriodBtn.disabled = !periods.length;
+  }
+
+  function saveCurrentSubiektPeriod({ silent = false } = {}) {
+    syncStateFromForm();
+    const period = getPeriodFromState(state);
+    const insights = buildSubiektInsights(state.csvRaw, period, state.pmSalary);
+
+    if (!period.from || !period.to || period.days <= 0) {
+      if (!silent) showToast("Uzupełnij poprawny zakres przed zapisaniem danych Subiekta.", { type: "error", ms: 3200 });
+      return null;
+    }
+    if (!insights) {
+      if (!silent) showToast("Wczytaj poprawne dane CSV z Subiekta przed zapisaniem okresu.", { type: "error", ms: 3200 });
+      return null;
+    }
+
+    const snapshot = upsertSubiektPeriodSnapshot(state, period, insights);
+    renderSubiektArchive(snapshot?.id || "");
+    if (!silent && snapshot) {
+      showToast(`Zapisano dane Subiekta dla okresu: ${period.label}.`, { type: "info", ms: 2800 });
+    }
+    return snapshot;
+  }
+
   function renderSubiektInsights() {
-    const insights = buildSubiektInsights(state.csvRaw, getPeriodFromState(state), state.pmSalary);
+    const period = getPeriodFromState(state);
+    const insights = buildSubiektInsights(state.csvRaw, period, state.pmSalary);
+    const previousPeriod = getPreviousPeriod(period);
+    const previousSnapshot = findSubiektPeriodSnapshot(state.subiektPeriods, previousPeriod);
+    const comparison = buildSubiektComparison(insights, previousSnapshot, previousPeriod);
     const groupShareItems = insights?.groups?.slice(0, 4).map((group) => ({
       name: group.group,
       value: Math.max(0, group.totalProfit),
@@ -1554,6 +1804,34 @@ export function initPmReportPanel() {
           )
         : "Lista pojawi sie po imporcie i parsowaniu CSV.";
     }
+
+    if (refs.subiektCompare) {
+      refs.subiektCompare.innerHTML = comparison.available
+        ? `
+          <div class="pmReportChartStack">
+            <div class="pmReportChartMiniTitle">Poprzedni zapisany okres: ${escapeHtml(previousPeriod.label)}</div>
+            <div class="pmReportKpiList">
+              <div class="pmReportKpiRow">
+                <div class="pmReportKpiLabel">Sprzedaż netto: ${escapeHtml(moneyCcy(insights.totalNet, "PLN"))} vs ${escapeHtml(moneyCcy(comparison.previous.totalNet, "PLN"))}</div>
+                <div class="pmReportKpiValue ${comparison.netDeltaPct >= 0 ? "pmReportValuePos" : "pmReportValueNeg"}">${escapeHtml(formatDeltaPct(comparison.netDeltaPct))}</div>
+              </div>
+              <div class="pmReportKpiRow">
+                <div class="pmReportKpiLabel">Zysk: ${escapeHtml(moneyCcy(insights.totalProfit, "PLN"))} vs ${escapeHtml(moneyCcy(comparison.previous.totalProfit, "PLN"))}</div>
+                <div class="pmReportKpiValue ${comparison.profitDeltaPct >= 0 ? "pmReportValuePos" : "pmReportValueNeg"}">${escapeHtml(formatDeltaPct(comparison.profitDeltaPct))}</div>
+              </div>
+              <div class="pmReportKpiRow">
+                <div class="pmReportKpiLabel">ROI: ${escapeHtml(formatPercent(insights.roiPct))} vs ${escapeHtml(formatPercent(comparison.previous.roiPct))}</div>
+                <div class="pmReportKpiValue ${comparison.roiDeltaPct >= 0 ? "pmReportValuePos" : "pmReportValueNeg"}">${escapeHtml(formatPointDelta(comparison.roiDeltaPct))}</div>
+              </div>
+              <div class="pmReportKpiRow">
+                <div class="pmReportKpiLabel">Wynik PM netto: ${escapeHtml(moneyCcy(insights.pmNetResult, "PLN"))} vs ${escapeHtml(moneyCcy(comparison.previous.pmNetResult, "PLN"))}</div>
+                <div class="pmReportKpiValue ${comparison.pmNetDeltaPct >= 0 ? "pmReportValuePos" : "pmReportValueNeg"}">${escapeHtml(formatDeltaPct(comparison.pmNetDeltaPct))}</div>
+              </div>
+            </div>
+          </div>
+        `
+        : `<div class="pmReportChartPlaceholderText">Brak zapisanego okresu: ${escapeHtml(previousPeriod.label)}. Najpierw zapisz dane tego okresu w archiwum Subiekta.</div>`;
+    }
   }
 
   function renderOfferInsights(summary) {
@@ -1640,6 +1918,15 @@ export function initPmReportPanel() {
           <div class="pmReportFinalRow"><span>ROI</span><strong>${escapeHtml(formatPercent(summary.subiekt?.roiPct || 0))}</strong></div>
           <div class="pmReportFinalRow"><span>Wynik PM netto</span><strong class="${(summary.subiekt?.pmNetResult || 0) >= 0 ? "pmReportValuePos" : "pmReportValueNeg"}">${escapeHtml(
             moneyCcy(summary.subiekt?.pmNetResult || 0, "PLN")
+          )}</strong></div>
+          <div class="pmReportFinalRow"><span>Zmiana netto okres/okres</span><strong>${escapeHtml(
+            summary.subiektComparison?.available ? formatDeltaPct(summary.subiektComparison.netDeltaPct) : "brak danych"
+          )}</strong></div>
+          <div class="pmReportFinalRow"><span>Zmiana zysku okres/okres</span><strong>${escapeHtml(
+            summary.subiektComparison?.available ? formatDeltaPct(summary.subiektComparison.profitDeltaPct) : "brak danych"
+          )}</strong></div>
+          <div class="pmReportFinalRow"><span>Zmiana ROI okres/okres</span><strong>${escapeHtml(
+            summary.subiektComparison?.available ? formatPointDelta(summary.subiektComparison.roiDeltaPct) : "brak danych"
           )}</strong></div>
           <div class="pmReportFinalRow"><span>Uwaga</span><strong>Bez sumowania z ofertą</strong></div>
         </div>
@@ -1795,7 +2082,17 @@ export function initPmReportPanel() {
     const summary = buildSummary(getPeriodFromState(state), state, offerRows, previousOfferRows);
     try {
       await exportPdf(summary, state);
-      showToast("Raport PDF został wygenerowany.", { type: "info", ms: 2500 });
+      const snapshot = summary.subiekt
+        ? upsertSubiektPeriodSnapshot(state, summary.period, summary.subiekt)
+        : null;
+      renderSubiektArchive(snapshot?.id || "");
+      renderSummary();
+      showToast(
+        snapshot
+          ? "Raport PDF został wygenerowany, a dane okresu zapisano w archiwum Subiekta."
+          : "Raport PDF został wygenerowany.",
+        { type: "info", ms: 3200 }
+      );
     } catch (error) {
       console.error(error);
       showToast("Nie udało się wygenerować PDF raportu.", { type: "error", ms: 3500 });
@@ -1840,6 +2137,24 @@ export function initPmReportPanel() {
 
   refs.quickPdfBtn?.addEventListener("click", () => {
     handleExportPdf();
+  });
+
+  refs.saveSubiektPeriodBtn?.addEventListener("click", () => {
+    const snapshot = saveCurrentSubiektPeriod();
+    if (snapshot) renderSummary();
+  });
+
+  refs.deleteSubiektPeriodBtn?.addEventListener("click", () => {
+    const selectedId = String(refs.subiektArchive?.value || "");
+    if (!selectedId) return;
+    const removed = state.subiektPeriods?.find((entry) => entry?.id === selectedId);
+    state.subiektPeriods = sanitizeSubiektPeriods(
+      (state.subiektPeriods || []).filter((entry) => entry?.id !== selectedId)
+    );
+    saveState(state);
+    renderSubiektArchive();
+    renderSummary();
+    showToast(`Usunięto zapisany okres: ${removed?.period?.label || selectedId}.`, { type: "info", ms: 2600 });
   });
 
   refs.selectAllBtn?.addEventListener("click", () => {
@@ -1894,7 +2209,7 @@ export function initPmReportPanel() {
   refs.csvRaw?.addEventListener("input", () => {
     syncStateFromForm();
     renderCsvMeta();
-    renderSubiektInsights();
+    renderSummary();
   });
 
   refs.csvFile?.addEventListener("change", async () => {
@@ -1907,7 +2222,7 @@ export function initPmReportPanel() {
       saveState(state);
       if (refs.csvRaw) refs.csvRaw.value = state.csvRaw;
       renderCsvMeta();
-      renderSubiektInsights();
+      renderSummary();
       showToast("CSV zapisany w formularzu raportu.", { type: "info", ms: 2200 });
     } catch (error) {
       console.error(error);
@@ -1929,6 +2244,7 @@ export function initPmReportPanel() {
   renderMode();
   renderEditors();
   renderCsvMeta();
+  renderSubiektArchive();
   renderSummary();
 
   return {
@@ -1936,6 +2252,7 @@ export function initPmReportPanel() {
       renderMode();
       renderEditors();
       renderCsvMeta();
+      renderSubiektArchive();
       renderSummary();
       await refreshOffers();
     },

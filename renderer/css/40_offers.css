@@ -2129,6 +2129,45 @@ body.iai-orders-modal-open{
   justify-content:space-between;
   gap:14px;
 }
+.pmReportArchiveRow{
+  display:grid;
+  grid-template-columns:auto minmax(220px, 1fr) 42px;
+  align-items:end;
+  gap:10px;
+  margin:12px 0 14px;
+  padding:12px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;
+  background:rgba(255,255,255,.025);
+}
+.pmReportArchiveSelectLabel{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  min-width:0;
+  color:rgba(232,238,247,.64);
+  font-size:11px;
+  font-weight:700;
+}
+.pmReportArchiveSelectLabel select{
+  width:100%;
+  min-width:0;
+  height:38px;
+  padding:0 10px;
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:10px;
+  background:#0b111a;
+  color:#e8eef7;
+}
+#pmReportDeleteSubiektPeriod{
+  width:42px;
+  height:38px;
+  padding:0;
+  justify-content:center;
+}
+#pmReportDeleteSubiektPeriod i{
+  margin:0;
+}
 .pmReportPanelHead{
   margin-bottom:14px;
 }
@@ -2590,6 +2629,9 @@ body.iai-orders-modal-open{
   min-width:0;
   overflow:hidden;
 }
+.pmReportChartCard--wide{
+  grid-column:1 / -1;
+}
 .pmReportChartTitle{
   font-size:14px;
   font-weight:800;
@@ -2727,6 +2769,13 @@ body.iai-orders-modal-open{
   }
   .pmReportStatCard strong{
     font-size:24px;
+  }
+  .pmReportArchiveRow{
+    grid-template-columns:1fr 42px;
+  }
+  #pmReportSaveSubiektPeriod{
+    grid-column:1 / -1;
+    justify-content:center;
   }
 }
 .itemDetailsRow > td{
