@@ -2,6 +2,7 @@ import { escapeHtml, money } from "../utils/format.js";
 import { getUserSettings, setUserSettings } from "../state/userSettings.js";
 import { getCompanyFooterLines } from "../i18n/pdfI18n.js";
 import { showToast } from "./toast.js";
+import { buildBusinessDocumentHtml, documentFieldsMarkup } from "../export/document-layout.js";
 
 const CLOSED_STATUSES = new Set([
   "joined",
@@ -1061,6 +1062,12 @@ function pickProductName(product) {
   return product?.productName || product?.name || product?.productLabel || "-";
 }
 
+// BEGIN document product languages
+function productDocumentName(product, lang) {
+  return product?.documentNames?.[lang] || pickProductName(product);
+}
+// END document product languages
+
 function pickProductCode(product) {
   return product?.productCode || product?.productSizeCodeExternal || product?.code || "";
 }
@@ -1752,6 +1759,44 @@ function buildConfirmationHtmlLocalized(order, lang = IAI_ORDERS_DEFAULT_LANG, s
 </html>`;
 }
 
+export function buildGermanOrderDocument(order, type, settings = null, overrides = {}) {
+  const summary = buildOrderSummary(order, "de");
+  const payment = order?.orderDetails?.payments || {};
+  const amounts = payment.orderCurrency || {};
+  const today = new Date();
+  const date = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+  const rows = pickProducts(order).map((product, index) => ({
+    description: [productDocumentName(product, "de"), pickProductCode(product), pickProductVariant(product)].filter((value) => value && value !== "-").join("\n"),
+    quantity: pickProductQty(product), net: pickProductNet(product), gross: pickProductGross(product),
+    vat: Number(product?.productVat || 0), serials: getProductSerials(order, product, index, settings),
+  }));
+  const addressData = type === "wz" ? pickDeliveryData(order) : pickBillingData(order);
+  const address = type === "wz"
+    ? [addressData.clientDeliveryAddressStreet, [addressData.clientDeliveryAddressZipCode,addressData.clientDeliveryAddressCity].filter(Boolean).join(" "), addressData.clientDeliveryAddressCountryName].filter(Boolean).join("\n")
+    : [addressData.clientStreet, [addressData.clientZipCode,addressData.clientCity].filter(Boolean).join(" "), addressData.clientCountryName].filter(Boolean).join("\n");
+  const defaults = {
+    number: type === "wz" ? String(order?.orderSerialNumber ?? "").trim() : String(order?.orderId || ""), date,
+    deliveryDate: String(order?.orderDetails?.orderDispatchDate || "").slice(0,10),
+    expectedDate: String(order?.orderDetails?.dispatch?.estimatedDeliveryDate || "").slice(0,10),
+    reference: "", recipient: type === "wz" ? pickDeliveryName(order) || pickBillingName(order) : pickBillingName(order),
+    address: address || (type === "wz" ? pickBillingAddress(order) : pickDeliveryAddress(order)),
+    contact: settings?.profile?.fullName || "", servicePeriod: "",
+    payment: payment.orderPaymentType ? (payment.orderPaymentType === "tradecredit" ? "Kauf auf Rechnung" : formatPaymentTypeI18n(payment.orderPaymentType,"de")) : "",
+    notes: String(order?.orderDetails?.clientNoteToOrder || ""),
+  };
+  const values = { ...defaults, ...overrides };
+  if (type === "wz") values.number = defaults.number; // IdoSell order number is authoritative.
+  const dueDate = values.date && payment.orderPaymentDays ? addDaysToDateString(values.date,payment.orderPaymentDays,"de").split(".").reverse().join("-") : "";
+  return { ...values, type, rows, buyerVatId: pickClientTaxId(order),
+    net: rows.reduce((sum,row) => sum+row.net,0), tax: rows.reduce((sum,row) => sum+row.gross-row.net,0),
+    gross: summary.totalValue,
+    dueDate: Object.prototype.hasOwnProperty.call(overrides,"dueDate") ? overrides.dueDate : dueDate,
+    charges: [["Versand",Number(amounts.orderDeliveryCost||0)], ["Zahlungsgebühr",Number(amounts.orderPayformCost||0)], ["Versicherung",Number(amounts.orderInsuranceCost||0)]],
+    money: (value) => formatMoney(value, summary.currency, "de"),
+    formatDate: (value) => /^\d{4}-\d{2}-\d{2}/.test(String(value)) ? formatDateForDocument(value,"de") : value,
+  };
+}
+
 function sameOrder(left, token) {
   const value = String(token || "").trim();
   if (!value) return false;
@@ -1800,6 +1845,23 @@ export function initIaiOrdersPanel({ onAvailabilityChange } = {}) {
   let currentLang = IAI_ORDERS_DEFAULT_LANG;
   let currentDocumentType = "wz";
   let pendingDocument = null;
+  let documentSave = Promise.resolve();
+  let documentUpdates = 0;
+
+  function documentOverrides(order, type) {
+    return lastSettings?.modulePrefs?.iaiOrders?.documentDrafts?.[lookupOrderToken(order)]?.[type] || {};
+  }
+
+  async function persistDocumentFields(order, type, fields) {
+    const token = lookupOrderToken(order);
+    const drafts = { ...(lastSettings?.modulePrefs?.iaiOrders?.documentDrafts || {}) };
+    drafts[token] = { ...(drafts[token] || {}), [type]: { ...documentOverrides(order,type), ...fields } };
+    lastSettings = { ...lastSettings, modulePrefs: { ...lastSettings?.modulePrefs, iaiOrders: { ...lastSettings?.modulePrefs?.iaiOrders, documentDrafts: drafts } } };
+    documentUpdates++;
+    documentSave = documentSave.catch(() => {}).then(() => setUserSettings({ modulePrefs: { iaiOrders: { documentDrafts: drafts } } }))
+      .finally(() => { documentUpdates--; });
+    await documentSave;
+  }
 
   function getOrderSerialsDraft(order, settings = lastSettings) {
     return { ...getOrderItemSerials(order, settings) };
@@ -1966,6 +2028,27 @@ export function initIaiOrdersPanel({ onAvailabilityChange } = {}) {
     if (sourceMeta) sourceMeta.textContent = sourceText;
   }
 
+  // BEGIN document product languages
+  async function ensureProductTexts(order) {
+    if (currentLang !== "de") return;
+    const language=currentLang;
+    const products=pickProducts(order), ids=[...new Set(products.map(p=>String(p.productId || "")).filter(id=>/^\d+$/.test(id)))];
+    let unavailable=products.some(p=>!/^\d+$/.test(String(p.productId || "")));
+    try {
+      for(let offset=0;offset<ids.length;offset+=100) {
+        const result=await window.esusAPI.idosellProductTexts({productIds:ids.slice(offset,offset+100),language});
+        unavailable ||= result.missing.length>0;
+        for(const product of products) {
+          const text=result.texts[String(product.productId)];
+          if(text) product.documentNames={...product.documentNames,[language]:text};
+        }
+      }
+    } catch(error) { unavailable=true; console.warn("Product language lookup failed",error); }
+    if(language!==currentLang) return ensureProductTexts(order);
+    if(unavailable) showToast(currentLang==="de" ? "Einige Produktübersetzungen fehlen oder konnten nicht geladen werden. Originaltexte bleiben erhalten." : currentLang==="pl" ? "Brak części tłumaczeń produktów lub błąd pobierania. Zachowano oryginalne nazwy." : "Some product translations are unavailable. Original names are retained.",{type:"warning",ms:6000});
+  }
+  // END document product languages
+
   async function fetchOrderByToken(token) {
     const baseOrder = lastOrders.find((item) => sameOrder(item, token)) || null;
 
@@ -2050,7 +2133,7 @@ export function initIaiOrdersPanel({ onAvailabilityChange } = {}) {
                 return `
                   <div class="iaiOrdersSerialPromptRow">
                     <div class="iaiOrdersSerialPromptProduct">
-                      <strong>${escapeHtml(pickProductName(product))}</strong>
+                      <strong>${escapeHtml(productDocumentName(product, currentLang))}</strong>
                       <span>${escapeHtml(pickProductCode(product))}</span>
                     </div>
                     <textarea
@@ -2271,7 +2354,7 @@ export function initIaiOrdersPanel({ onAvailabilityChange } = {}) {
                           <tr>
                             <td>${index + 1}</td>
                             <td>
-                              <div class="iaiOrdersPrimary">${escapeHtml(pickProductName(product))}</div>
+                              <div class="iaiOrdersPrimary">${escapeHtml(productDocumentName(product, currentLang))}</div>
                               <div class="iaiOrdersSecondary">${escapeHtml(pickProductCode(product))}</div>
                             </td>
                             <td>
@@ -2308,6 +2391,30 @@ export function initIaiOrdersPanel({ onAvailabilityChange } = {}) {
         <p><strong>${escapeHtml(t(currentLang, "courierNote"))}</strong> ${escapeHtml(order?.orderDetails?.clientNoteToCourier || "-")}</p>
       </section>
     `;
+    // BEGIN order invoice handoff
+    const invoiceButton = document.createElement("button");
+    invoiceButton.id = "iaiOrderInvoiceDraft";
+    invoiceButton.type = "button";
+    invoiceButton.textContent = currentLang === "de" ? "E-Rechnung erstellen" : currentLang === "pl" ? "Utwórz e-fakturę" : "Create e-invoice";
+    invoiceButton.addEventListener("click", async () => {
+      invoiceButton.disabled = true;
+      try {
+        await documentSave;
+        await ensureProductTexts(order);
+        const accepted = await new Promise(resolve => window.dispatchEvent(new CustomEvent("esus:invoice-from-order", {
+          detail:{order:{...order,productsResults:pickProducts(order)},language:currentLang,
+            purchaseOrder:documentOverrides(order,"wz").reference || "",resolve}
+        })));
+        if (accepted) closePreview();
+      } finally { invoiceButton.disabled = false; }
+    });
+    modalBody.prepend(invoiceButton);
+    // END order invoice handoff
+    if (currentLang === "de") {
+      const type = normalizeIaiOrdersDocumentType(modalDocType?.value || currentDocumentType);
+      const values = buildGermanOrderDocument(order, type, lastSettings, documentOverrides(order,type));
+      modalBody.insertAdjacentHTML("beforeend", documentFieldsMarkup(values,type));
+    }
   }
 
   async function openPreview(token) {
@@ -2321,6 +2428,7 @@ export function initIaiOrdersPanel({ onAvailabilityChange } = {}) {
         return;
       }
 
+      await ensureProductTexts(order); // document product languages
       previewOrder = order;
       renderPreview(order);
       syncModalDocumentPicker();
@@ -2338,6 +2446,7 @@ export function initIaiOrdersPanel({ onAvailabilityChange } = {}) {
 
   function buildDocumentHtmlForType(order, type) {
     const normalizedType = normalizeIaiOrdersDocumentType(type);
+    if (currentLang === "de") return buildBusinessDocumentHtml(buildGermanOrderDocument(order, normalizedType, lastSettings, documentOverrides(order,normalizedType)));
     switch (normalizedType) {
       case "invoice":
         return buildInvoiceHtmlLocalized(order, currentLang, lastSettings);
@@ -2364,10 +2473,18 @@ export function initIaiOrdersPanel({ onAvailabilityChange } = {}) {
       }
 
       if (previewOrder && lookupOrderToken(previewOrder) === lookupOrderToken(order)) {
+        await documentSave;
         await persistOrderSerials(previewOrder);
       }
 
+      await ensureProductTexts(order); // document product languages
       const html = buildDocumentHtmlForType(order, normalizedType);
+      if (currentLang === "de") {
+        const data = buildGermanOrderDocument(order,normalizedType,lastSettings,documentOverrides(order,normalizedType));
+        if ([data.number,data.date,data.recipient,data.address].some((value) => !String(value || "").trim())) {
+          throw new Error("Dokumentnummer, Dokumentdatum, Empfänger und Anschrift müssen ausgefüllt sein.");
+        }
+      }
       const title = `${docLabel} ${order?.orderId || ""}`.trim();
       openDocumentPopup(html, title, currentLang);
     } catch (error) {
@@ -2449,7 +2566,7 @@ export function initIaiOrdersPanel({ onAvailabilityChange } = {}) {
   langSelect?.addEventListener("change", async (event) => {
     try {
       await persistModuleLanguage(event?.target?.value);
-      if (previewOrder) renderPreview(previewOrder);
+      if (previewOrder) { await ensureProductTexts(previewOrder); renderPreview(previewOrder); } // document product languages
       void loadOrders();
     } catch (error) {
       console.error(error);
@@ -2478,8 +2595,20 @@ export function initIaiOrdersPanel({ onAvailabilityChange } = {}) {
       closePreview();
     }
   });
-  modalDocType?.addEventListener("change", (event) => {
+  modalDocType?.addEventListener("change", async (event) => {
     currentDocumentType = normalizeIaiOrdersDocumentType(event?.target?.value);
+    if (previewOrder && currentLang === "de") {
+      await documentSave;
+      await persistOrderSerials(previewOrder);
+      renderPreview(previewOrder);
+    }
+  });
+  modalBody?.addEventListener("change", (event) => {
+    const field = event.target;
+    if (!field.matches?.("[data-document-field]") || !previewOrder) return;
+    void persistDocumentFields(previewOrder, field.dataset.documentType, {
+      [field.dataset.documentField]: field.value,
+    }).catch((error) => showToast(String(error.message || error), {type:"error"}));
   });
   modalGenerate?.addEventListener("click", () => {
     if (previewOrder) {
@@ -2498,6 +2627,7 @@ export function initIaiOrdersPanel({ onAvailabilityChange } = {}) {
   });
 
   window.addEventListener("esus:settingsChanged", () => {
+    if (documentUpdates) return;
     void syncAvailability().then((ready) => {
       if (ready) {
         renderRows(lastOrders);

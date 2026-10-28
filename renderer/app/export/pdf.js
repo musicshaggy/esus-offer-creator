@@ -1,3 +1,4 @@
+import { renderGermanOffer } from "./offer-layout.js";
 // renderer/app/pdf/pdf.js
 import { LOGO_URL_B, NOTO_REG_URL, NOTO_BOLD_URL } from "../config/constants.js";
 import { getVatFromUI } from "../utils/vat.js";
@@ -732,7 +733,7 @@ function drawExtraArrangementsCard(doc, {
   return { bottomY: y + cardH, height: cardH };
 }
 
-export async function generatePdf({ onBefore } = {}) {
+async function generateLegacyPdf({ onBefore } = {}) {
   onBefore?.();
 
   const lang = getPdfLang();
@@ -1348,4 +1349,66 @@ export async function generatePdf({ onBefore } = {}) {
 
   const prefix = getFilePrefix(lang);
   doc.save(`${prefix}_${offerNo.replaceAll("/", "-")}.pdf`);
+}
+
+// The new document family is introduced in German first. Legacy languages remain intact.
+export async function generatePdf(options = {}) {
+  if (getPdfLang() !== "de") return generateLegacyPdf(options);
+  options.onBefore?.();
+  if (!store.items.length) {
+    showToast(t("de", "missingData"), { type: "error", ms: 3500 });
+    return;
+  }
+  const invalid = findInvalidDiscount(store.items);
+  if (invalid) {
+    showInvalidDiscountError(invalid, "de");
+    return;
+  }
+  const value = (id) => (document.getElementById(id)?.value || "").trim();
+  const currency = getDocCurrency();
+  const vat = getVatFromUI();
+  const rows = store.items.flatMap((item, index) => {
+    const quantity = Math.max(1, parseInt(item.qty || 1, 10));
+    const alternatives = getAlternativeParts(item, "de", currency);
+    const position = String(index + 1);
+    const description = [item.desc || "-", getWarrantyParts(item, "de")?.text].filter(Boolean).join("\n");
+    return [{ position: alternatives.length ? `${position}a` : position,
+      description: alternatives.length ? `${t("de", "primaryOption")} ${position}a: ${description}` : description,
+      quantity, net: itemNetAfterDiscount(item), discount: toNumber(item.discount), alternative: false },
+      ...alternatives.map((alternative) => ({ position: position + alternative.marker,
+        description: `${t("de", "variantsImpactVariant")} ${position + alternative.marker}: ${alternative.desc}`,
+        quantity: alternative.qty, net: itemNetAfterDiscount(alternative),
+        discount: alternative.discount, alternative: true }))];
+  });
+  const shipping = computeShippingValues({ vatRate: vat.rate });
+  if (shipping.enteredAmount > 0) rows.push({position:String(store.items.length+1),description:"Versandkosten",quantity:1,net:shipping.net,discount:0,alternative:false});
+  const net = rows.filter((row) => !row.alternative).reduce((sum, row) => sum + row.net * row.quantity, 0);
+  const isEstimate = !!document.getElementById("isEstimate")?.checked;
+  const previewNumber = document.getElementById("offerNumberPreview")?.textContent.trim();
+  const number = previewNumber && previewNumber !== "—" ? previewNumber : buildOfferNumber();
+  const now = new Date();
+  const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const leadTime = value("estimateDays");
+  let logo = null;
+  try { logo = await fetchAsDataURL(LOGO_URL_B); } catch (error) { console.error(error); }
+  return renderGermanOffer({
+    logo, number,
+    title: getDocLabel("de", isEstimate), date: formatDate(localDate, "de"),
+    validUntil: value("validUntil") ? formatDate(value("validUntil"), "de") : "",
+    leadTime: /^\d+(?:\s*[-–]\s*\d+)?$/.test(leadTime) ? `${leadTime} ${t("de", "businessDays")}` : leadTime,
+    customer: { ...formatCustomerBlock("de"), taxId: value("custNip") }, creator: value("creatorName"),
+    creatorContact: [value("creatorEmail"), value("creatorPhone")].filter(Boolean).join(" | "),
+    subtitle: value("creatorNotes"), extra: value("termsExtra"),
+    payment: `${labelNoColon("de", "payment")}: ${formatPaymentText("de", value("paymentMethod") || "prepay", value("invoiceDays") || "30").replace(/\((\d+)\)\s*$/, "($1 Tage)")}`,
+    shipping: `${labelNoColon("de", "delivery")}: ${shipping.gross === 0 ? t("de", "deliverySellerCost") : `${formatMoney(shipping.net, "de", currency)} netto / ${formatMoney(shipping.gross, "de", currency)} brutto`}`,
+    rows, net, tax: net * vat.rate, gross: net * (1 + vat.rate),
+    vatLabel: `USt. ${vatLabelI18n("de", vat)}`,
+    money: (amount) => formatMoney(amount, "de", currency),
+    showDiscount: !!document.getElementById("showDiscountColumnPdf")?.checked,
+    alternativeImpact: buildAlternativeImpactRows(store.items, { lang: "de", currency, vatRate: vat.rate, baseSumGross: net * (1 + vat.rate) }),
+    alternativeTitle: t("de", "variantsImpactTitle"),
+    alternativeHead: ["Pos.", t("de", "variantsImpactVariant"), t("de", "variantsImpactPrice"), t("de", "variantsImpactDelta"), t("de", "variantsImpactNewGross")],
+    estimateDisclaimer: isEstimate ? t("de", "estimateDisclaimer") : "",
+    filename: `${getFilePrefix("de")}_${number.replaceAll("/", "-")}.pdf`,
+  });
 }

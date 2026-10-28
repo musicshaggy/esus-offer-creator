@@ -1,0 +1,61 @@
+{
+  "margin": 20,
+  "footerTop": 265,
+  "contentBottom": 255,
+  "font": "Inter",
+  "colors": {
+    "accent": [
+      0,
+      154,
+      255
+    ],
+    "body": [
+      32,
+      43,
+      60
+    ],
+    "muted": [
+      110,
+      110,
+      110
+    ],
+    "line": [
+      220,
+      220,
+      220
+    ],
+    "stripe": [
+      247,
+      247,
+      247
+    ]
+  },
+  "company": {
+    "name": "ESUS IT GmbH",
+    "street": "Waldsiedlung Fichtendamm 4",
+    "city": "15306 Vierlinden",
+    "phone": "+49 174 1507987",
+    "email": "verkauf@esus-it.de",
+    "website": "https://www.esus-it.de/",
+    "taxId": "064/108/06221",
+    "vatId": "DE353880111",
+    "register": "Amtsgericht Frankfurt (Oder), HRB 19471",
+    "management": "Szymon Drobinski",
+    "bank": "Banking Circle - German Branch",
+    "iban": "DE45202208000057966269",
+    "bic": "SXPYDEHHXXX"
+  },
+  "address": {
+    "fieldLeft": 20,
+    "fieldTop": 45,
+    "fieldWidth": 85,
+    "fieldHeight": 45,
+    "textLeft": 20,
+    "textTop": 63.5,
+    "textWidth": 75,
+    "senderTop": 58,
+    "fontSize": 10
+  },
+  "footerBottom": 8,
+  "rightMargin": 15
+}

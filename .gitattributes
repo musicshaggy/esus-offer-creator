@@ -1,0 +1,4 @@
+# Official validator files are verified by SHA256; preserve their exact bytes.
+/invoice/validation/** -text
+# Preserve the original project's PDF bytes on Windows checkouts as well.
+/output/pdf/*.pdf -text

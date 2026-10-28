@@ -1,0 +1,17 @@
+{
+  "seller": {
+    "name": "ESUS IT GmbH",
+    "street": "Waldsiedlung Fichtendamm 4",
+    "postcode": "15306",
+    "city": "Vierlinden",
+    "country": "DE",
+    "vat_id": "DE353880111",
+    "tax_id": "064/108/06221",
+    "endpoint": "verkauf@esus-it.de",
+    "endpoint_scheme": "EM"
+  },
+  "iban": "DE45202208000057966269",
+  "contact_name": "Tomasz Ambrozik",
+  "contact_phone": "+491741507987",
+  "contact_email": "verkauf@esus-it.de"
+}

@@ -23,6 +23,13 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
-server/
 
-backend-client.json
+# Local invoice runtime, generated tests and user data
+runtime/
+invoice/vendor/
+invoice/tools/
+**/__pycache__/
+invoice/data/
+tests/desktop-data/
+tests/pdf-samples/
+tests/*.png

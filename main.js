@@ -3,6 +3,7 @@ const { app, BrowserWindow, ipcMain, dialog, safeStorage, Notification } = requi
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+require("./invoice-ipc");
 const os = require("os");
 const { autoUpdater } = require("electron-updater");
 const {
@@ -2806,6 +2807,20 @@ function sanitizeSettingsPatch(patch) {
 
     if (isPlainObject(patch.modulePrefs.iaiOrders)) {
       next.modulePrefs.iaiOrders = {};
+      if (isPlainObject(patch.modulePrefs.iaiOrders.documentDrafts)) {
+        const documentDrafts = Object.create(null);
+        const fields = ["number","date","deliveryDate","expectedDate","dueDate","reference","recipient","address","contact","servicePeriod","payment","notes"];
+        for (const [token, documents] of Object.entries(patch.modulePrefs.iaiOrders.documentDrafts)) {
+          if (!token || !isPlainObject(documents)) continue;
+          documentDrafts[token] = {};
+          for (const type of ["wz","invoice","confirmation"]) {
+            if (!isPlainObject(documents[type])) continue;
+            documentDrafts[token][type] = Object.fromEntries(fields.filter((key) => Object.prototype.hasOwnProperty.call(documents[type],key))
+              .map((key) => [key,String(documents[type][key] ?? "").slice(0,5000)]));
+          }
+        }
+        next.modulePrefs.iaiOrders.documentDrafts = documentDrafts;
+      }
 
       if (Object.prototype.hasOwnProperty.call(patch.modulePrefs.iaiOrders, "lang")) {
         next.modulePrefs.iaiOrders.lang = String(patch.modulePrefs.iaiOrders.lang || "").trim().toLowerCase();
@@ -3153,6 +3168,13 @@ ipcMain.handle("idosell:ordersList", async (_evt, payload) => {
   });
 });
 
+// BEGIN document product languages
+const productTextLookup = require("./background/idosellProductTexts").createProductTextLookup({
+  settings:getIdoSellIntegrationSettings, url:buildIdoSellAdminUrl, request:callIdoSellJson,
+});
+ipcMain.handle("idosell:productTexts", (_event,payload) => productTextLookup(payload));
+// END document product languages
+
 ipcMain.handle("idosell:orderGet", async (_evt, payload) => {
   const manualLookup =
     typeof payload === "object" && payload !== null
@@ -3457,10 +3479,18 @@ ipcMain.handle("export:pdfFromHtml", async (_evt, { defaultName, html, dialogTit
       ])
     `);
 
+    if (String(html || "").includes('name="esus-document-style" content="unified"')) {
+      await exportWin.webContents.executeJavaScript('document.documentElement.classList.add("native-pdf-export")');
+    }
     const pdf = await exportWin.webContents.printToPDF({
       printBackground: true,
       pageSize: "A4",
       preferCSSPageSize: true,
+      ...(String(html || "").includes('name="esus-document-style" content="unified"') ? {
+        displayHeaderFooter: true,
+        headerTemplate: '<div style="position:absolute;top:0;left:0;width:100%;height:6mm;background:#009aff;-webkit-print-color-adjust:exact"></div>',
+        footerTemplate: '<div style="width:100%;height:32mm;margin:0 15mm 0 20mm;font-size:6.5pt;color:#202b3c"><div style="text-align:right;margin-bottom:3mm">Seite <span class="pageNumber"></span> von <span class="totalPages"></span></div>' + (String(html).match(/<footer class="footer"[\s\S]*?<\/footer>/)?.[0] || "") + '</div>',
+      } : {}),
     });
     fs.writeFileSync(res.filePath, pdf);
     return { ok: true, path: res.filePath };
