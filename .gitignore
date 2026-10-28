@@ -33,3 +33,7 @@ invoice/data/
 tests/desktop-data/
 tests/pdf-samples/
 tests/*.png
+
+server/
+
+backend-client.json
