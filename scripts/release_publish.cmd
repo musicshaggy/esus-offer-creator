@@ -109,6 +109,8 @@ if not defined GH_TOKEN (
 
 echo.
 echo Publikacja release v%NEW_VERSION%...
+call npm run invoice:prepare
+if errorlevel 1 exit /b 1
 call npx electron-builder --win --publish always
 if errorlevel 1 (
   echo [ERROR] electron-builder zakonczyl sie bledem.

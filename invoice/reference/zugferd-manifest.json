@@ -1,0 +1,13 @@
+{
+  "version": "ZUGFeRD 2.5.2 / Factur-X 1.09.2",
+  "release": "2026-08-04",
+  "source": "factur-x 7.5 / FNFE-MPE profile artifacts",
+  "files": {
+    "Factur-X_1.09_EN16931_urn_un_unece_uncefact_data_standard_QualifiedDataType_100.xsd": "5a3ce756cfa8d4f2ff3165d68123cfb7fbf3c7b64664edb0de38cca64d5c413b",
+    "Factur-X_1.09_EN16931_urn_un_unece_uncefact_data_standard_ReusableAggregateBusinessInformationEntity_100.xsd": "99ee1a2a2857babcb4ab74a64fc65a816fe25d2209291d403a8d0dc85542abd8",
+    "Factur-X_1.09_EN16931_urn_un_unece_uncefact_data_standard_UnqualifiedDataType_100.xsd": "f87a1b78d2b7177955957002f8c2a7917e326038d38803f875266cc7579ea857",
+    "Factur-X_EN16931.xsd": "977654a4e0442885a3d622ca198cff414f467eebc93098654b98127f2349f066",
+    "FACTUR-X_EN16931.xslt": "979f7e0210c727f1049ff55a93498531ba83a8ed2207d0d5247cd2d80c9c3d1a",
+    "FACTUR-X_EN16931_codedb.xml": "70339a41d71b02bb97683f8eea04acbd764e077a88a446b32860d89c3351b62f"
+  }
+}
