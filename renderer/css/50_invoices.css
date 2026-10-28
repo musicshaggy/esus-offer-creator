@@ -314,6 +314,80 @@ body.invoice-active > main {
 #invoiceBack {
   margin-bottom: 14px;
 }
+
+.invoiceAppDialog {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.invoiceAppDialog[hidden] {
+  display: none !important;
+}
+.invoiceAppDialog__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 8, 14, 0.72);
+  backdrop-filter: blur(3px);
+}
+.invoiceAppDialog__panel {
+  position: relative;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 16px;
+  width: min(480px, 100%);
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--erp-panel, #171d26);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
+}
+.invoiceAppDialog__icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  color: #ffca72;
+  background: rgba(255, 174, 51, 0.12);
+  border: 1px solid rgba(255, 174, 51, 0.24);
+}
+.invoiceAppDialog.is-danger .invoiceAppDialog__icon {
+  color: #ff9292;
+  background: rgba(220, 72, 72, 0.12);
+  border-color: rgba(220, 72, 72, 0.28);
+}
+.invoiceAppDialog__content {
+  min-width: 0;
+}
+.invoiceAppDialog__content h2 {
+  margin: 1px 0 7px;
+  font-size: 17px;
+  font-weight: 650;
+}
+.invoiceAppDialog__content p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.invoiceAppDialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.invoiceAppDialog__actions button {
+  min-height: 36px;
+  border-radius: 4px;
+  transform: none;
+}
+.invoiceAppDialog__actions button:hover {
+  transform: none;
+}
 @media (max-width: 640px) {
   .invoice-field-grid {
     grid-template-columns: 1fr;
@@ -321,6 +395,9 @@ body.invoice-active > main {
   .invoice-output {
     flex-direction: column;
     width: 100%;
+  }
+  .invoiceAppDialog__panel {
+    grid-template-columns: 1fr;
   }
 }
 

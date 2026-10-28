@@ -74,6 +74,12 @@ app.whenReady().then(async () => {
       await win.webContents.executeJavaScript(
         `document.querySelector('#btnOffersInvoices').hidden`,
       ),
+      true,
+    );
+    await win.webContents.executeJavaScript(`(async()=>{const settings=await window.esusAPI.settingsSet({modulePrefs:{visibility:{pmReport:true,iaiOrders:true,invoicesDe:true}}});window.dispatchEvent(new CustomEvent('esus:settingsChanged',{detail:{settings}}));})()`);
+    await wait(150);
+    assert.equal(
+      await win.webContents.executeJavaScript(`document.querySelector('#btnOffersInvoices').hidden`),
       false,
     );
     await win.webContents.executeJavaScript(
@@ -262,18 +268,20 @@ app.whenReady().then(async () => {
     const before = await win.webContents.executeJavaScript(
       `document.querySelector('[data-field="number"]').value`,
     );
-    await win.webContents.executeJavaScript(
-      `document.querySelector('#invoiceBack').click();document.querySelector('#btnOffersInvoices').click()`,
-    );
+    await win.webContents.executeJavaScript(`document.querySelector('#invoiceBack').click()`);
+    await wait(100);
+    assert.equal(await win.webContents.executeJavaScript(`document.querySelector('.invoiceAppDialog').hidden`), false);
+    await win.webContents.executeJavaScript(`document.querySelector('.invoiceAppDialog__cancel').click()`);
     assert.equal(
       await win.webContents.executeJavaScript(
         `document.querySelector('[data-field="number"]').value`,
       ),
       before,
     );
-    await win.webContents.executeJavaScript(
-      `document.querySelector('#invoiceBack').click()`,
-    );
+    await win.webContents.executeJavaScript(`document.querySelector('#invoiceBack').click()`);
+    await wait(100);
+    await win.webContents.executeJavaScript(`document.querySelector('.invoiceAppDialog__confirm').click()`);
+    await wait(100);
     assert.equal(
       await win.webContents.executeJavaScript(
         `document.querySelector('#invoiceWorkspace').hidden`,
@@ -436,12 +444,17 @@ app.whenReady().then(async () => {
       clientResult:{clientBillingAddress:{clientFirm:"API Kunde",clientStreet:"Teststraße 1",clientZipCode:"10317",clientCity:"Berlin",clientCountryId:"DE",clientEmail:"kunde@example.org"}},
       productsResults:[{productName:"Original",documentNames:{de:"Deutscher Artikel"},productQuantity:"3",productOrderPriceNet:"100",productOrderPrice:"119",productVat:"19"}],
       orderDetails:{payments:{orderCurrency:{currencyId:"EUR",orderProductsCost:"357",orderDeliveryCost:0,orderPayformCost:0,orderInsuranceCost:0}}}};
-    await win.webContents.executeJavaScript(`document.querySelector('#btnOffersInvoices').click();{const field=document.querySelector('[data-field="number"]');field.value='PRESERVE-ME';field.dispatchEvent(new Event('input',{bubbles:true}));}window.confirm=()=>false;void 0`);
+    await win.webContents.executeJavaScript(`document.querySelector('#btnOffersInvoices').click();{const field=document.querySelector('[data-field="number"]');field.value='PRESERVE-ME';field.dispatchEvent(new Event('input',{bubbles:true}));}void 0`);
     const transfer = async () => win.webContents.executeJavaScript(`new Promise(resolve=>window.dispatchEvent(new CustomEvent('esus:invoice-from-order',{detail:{order:${JSON.stringify(orderDraft)},language:'de',purchaseOrder:'PO-42',resolve}})))`);
-    assert.equal(await transfer(),false);
+    const canceledTransfer = transfer();
+    await wait(100);
+    await win.webContents.executeJavaScript(`document.querySelector('.invoiceAppDialog__cancel').click()`);
+    assert.equal(await canceledTransfer,false);
     assert.equal(await win.webContents.executeJavaScript(`document.querySelector('[data-field="number"]').value`),'PRESERVE-ME');
-    await win.webContents.executeJavaScript('window.confirm=()=>true;void 0');
-    assert.equal(await transfer(),true);
+    const acceptedTransfer = transfer();
+    await wait(100);
+    await win.webContents.executeJavaScript(`document.querySelector('.invoiceAppDialog__confirm').click()`);
+    assert.equal(await acceptedTransfer,true);
     const transferred=await win.webContents.executeJavaScript(`({number:document.querySelector('[data-field="number"]').value,source:document.querySelector('[data-field="source_order"]').value,net:document.querySelector('[data-field="net_total"]').value,po:document.querySelector('[data-field="purchase_order"]').value,pdfImport:!!document.querySelector('[data-action="import"]'),imageHidden:document.querySelector('#invoicePreviewImage').hidden,open:!document.querySelector('#invoiceWorkspace').hidden})`);
     assert.deepEqual(transferred,{number:'',source:'54321',net:'300.00',po:'PO-42',pdfImport:true,imageHidden:true,open:true});
     fs.writeFileSync(path.join(__dirname,'invoice-order-ui.png'),(await win.webContents.capturePage()).toPNG());

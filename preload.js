@@ -10,7 +10,9 @@ contextBridge.exposeInMainWorld("esusAPI", {
   winMinimize: () => ipcRenderer.invoke("window:minimize"),
   winToggleMaximize: () => ipcRenderer.invoke("window:toggleMaximize"),
   winClose: () => ipcRenderer.invoke("window:close"),
+  winConfirmClose: () => ipcRenderer.invoke("window:confirmClose"),
   winIsMaximized: () => ipcRenderer.invoke("window:isMaximized"),
+  onWinCloseRequested: (cb) => ipcRenderer.on("window:close-requested", () => cb()),
 
   // User settings (profile, initials, offer sequencing)
   settingsGet: () => ipcRenderer.invoke("settings:get"),

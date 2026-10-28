@@ -12,6 +12,7 @@ import { initOffersSubpage } from "./ui/offersPage.js";
 import { renderItems, recalcAllRowsUI } from "./ui/itemsTable.js";
 import { initClientSuggestions } from "./ui/clientSuggestions.js";
 import { initSettingsModal } from "./ui/settingsModal.js";
+import { initModuleVisibility } from "./ui/moduleVisibility.js";
 
 import { clearSavedState, loadStateFromStorage } from "./state/persistence.js";
 import { applyOfferDocumentOptions } from "./state/offerDocumentOptions.js";
@@ -57,6 +58,7 @@ fetchExchangeRates().then((ex) => {
 });
 
 initErpLayout();
+initModuleVisibility();
 
 let cameFromMainPage = false;
 let currentOfferId = null; // ID aktualnie otwartej oferty w formularzu

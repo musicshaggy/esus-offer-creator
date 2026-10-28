@@ -3,6 +3,7 @@ import { getUserSettings, setUserSettings } from "../state/userSettings.js";
 import { getCompanyFooterLines } from "../i18n/pdfI18n.js";
 import { showToast } from "./toast.js";
 import { buildBusinessDocumentHtml, documentFieldsMarkup } from "../export/document-layout.js";
+import { resolveModuleVisibility } from "./moduleVisibility.js";
 
 const CLOSED_STATUSES = new Set([
   "joined",
@@ -2395,7 +2396,7 @@ export function initIaiOrdersPanel({ onAvailabilityChange } = {}) {
     const invoiceButton = document.createElement("button");
     invoiceButton.id = "iaiOrderInvoiceDraft";
     invoiceButton.type = "button";
-    invoiceButton.textContent = currentLang === "de" ? "E-Rechnung erstellen" : currentLang === "pl" ? "Utwórz e-fakturę" : "Create e-invoice";
+    invoiceButton.textContent = currentLang === "de" ? "E-Rechnung erstellen" : currentLang === "pl" ? "Utwórz e-fakturę (DE)" : "Create German e-invoice";
     invoiceButton.addEventListener("click", async () => {
       invoiceButton.disabled = true;
       try {
@@ -2408,7 +2409,7 @@ export function initIaiOrdersPanel({ onAvailabilityChange } = {}) {
         if (accepted) closePreview();
       } finally { invoiceButton.disabled = false; }
     });
-    modalBody.prepend(invoiceButton);
+    if (resolveModuleVisibility(lastSettings).invoicesDe) modalBody.prepend(invoiceButton);
     // END order invoice handoff
     if (currentLang === "de") {
       const type = normalizeIaiOrdersDocumentType(modalDocType?.value || currentDocumentType);

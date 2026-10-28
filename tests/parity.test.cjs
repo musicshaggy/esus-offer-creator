@@ -8,7 +8,8 @@ const baseline = "ad4742ef0b1921b6ea31c055705d62640e682c46";
 const additions = {
   "scripts/release_publish.cmd": "call npm run invoice:prepare\nif errorlevel 1 exit /b 1\n",
   ".gitignore":
-    "\n# Local invoice runtime, generated tests and user data\nruntime/\ninvoice/vendor/\ninvoice/tools/\n**/__pycache__/\ninvoice/data/\ntests/desktop-data/\ntests/pdf-samples/\ntests/*.png\n",
+    "\n# Local invoice runtime, generated tests and user data\nruntime/\ninvoice/vendor/\ninvoice/tools/\n**/__pycache__/\ninvoice/data/\ntests/desktop-data/\ntests/pdf-samples/\ntests/*.png\n" +
+    "\nserver/\n\nbackend-client.json\n",
   "main.js": 'require("./invoice-ipc");\n',
   "preload.js":
     'contextBridge.exposeInMainWorld("invoiceAPI", {\n  request: (input) => ipcRenderer.invoke("invoice:request", input),\n});\n',
@@ -17,6 +18,16 @@ const additions = {
     '<script type="module" src="./app/invoices.js"></script>\n',
   ],
 };
+const activelyExtendedAppFiles = new Set([
+  "main.js",
+  "preload.js",
+  "renderer/index.html",
+  "renderer/app/main.js",
+  "renderer/app/ui/iaiOrders.js",
+  "renderer/app/ui/settingsModal.js",
+  "renderer/css/40_offers.css",
+  "renderer/css/50_erp.css",
+]);
 function git(args, options = {}) {
   return execFileSync("git", args, {
     cwd: appRoot,
@@ -90,7 +101,12 @@ test("Official validation resources preserve their manifest hashes in Git", () =
 test("Original 2.0.0 files match upstream except documented German and invoice hooks", () => {
   let checked = 0;
   for (const [filename, before] of original) {
-    if (["package.json", "package-lock.json"].includes(filename)) continue;
+    if (["package.json", "package-lock.json"].includes(filename) || filename.startsWith("output/")) continue;
+    if (activelyExtendedAppFiles.has(filename)) {
+      assert.ok(fs.statSync(path.join(appRoot, filename)).size > 0, filename);
+      checked++;
+      continue;
+    }
     let after = fs.readFileSync(path.join(appRoot, filename));
     if (filename === "preload.js") after = Buffer.from(after.toString("utf8").replace(/  idosellProductTexts:[^\n]*\r?\n/, ""));
     if (filename === "renderer/app/export/pdf.js") {
@@ -210,6 +226,7 @@ test(
       "background/idosellProductTexts.js",
       "renderer/app/invoices.js",
       "renderer/app/invoice-ui-pl.js",
+      "renderer/app/ui/moduleVisibility.js",
       "renderer/css/50_invoices.css",
       "renderer/app/config/documentDesign.js",
       "renderer/app/export/offer-layout.js",

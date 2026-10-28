@@ -21,6 +21,8 @@ app.setPath("userData", path.join(os.homedir(), "AppData", "Local", "ESUS-Quote"
 
 let splashWin = null;
 let win = null;
+let appIsQuitting = false;
+let windowCloseApproved = false;
 const idosellOpenApiCache = new Map();
 const idosellProductSearchCache = new Map();
 const IDOSELL_PRODUCT_SEARCH_CACHE_VERSION = "v4";
@@ -104,6 +106,17 @@ function createWindow() {
 
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
 
+  win.on("close", (event) => {
+    if (appIsQuitting || windowCloseApproved || win?.isDestroyed()) return;
+    event.preventDefault();
+    win.webContents.send("window:close-requested");
+  });
+
+  win.on("closed", () => {
+    windowCloseApproved = false;
+    win = null;
+  });
+
   win.webContents.on("did-finish-load", () => {
     closeSplashOnce();
     showMain();
@@ -131,6 +144,11 @@ function defaultUserSettings() {
     profile: null,
     docDefaults: { offerCcy: "PLN", lang: "pl", vatCode: "23" },
     modulePrefs: {
+      visibility: {
+        pmReport: true,
+        iaiOrders: true,
+        invoicesDe: false,
+      },
       iaiOrders: {
         lang: "pl",
         orderItemSerials: {},
@@ -293,6 +311,11 @@ function mergeUserSettings(current, patch) {
           ...(defaults.modulePrefs || {}),
           ...(current?.modulePrefs || {}),
           ...patch.modulePrefs,
+          visibility: {
+            ...(defaults.modulePrefs?.visibility || {}),
+            ...(current?.modulePrefs?.visibility || {}),
+            ...(patch?.modulePrefs?.visibility || {}),
+          },
           iaiOrders: {
             ...(defaults.modulePrefs?.iaiOrders || {}),
             ...(current?.modulePrefs?.iaiOrders || {}),
@@ -311,6 +334,10 @@ function mergeUserSettings(current, patch) {
       : {
           ...(defaults.modulePrefs || {}),
           ...(current?.modulePrefs || {}),
+          visibility: {
+            ...(defaults.modulePrefs?.visibility || {}),
+            ...(current?.modulePrefs?.visibility || {}),
+          },
           iaiOrders: {
             ...(defaults.modulePrefs?.iaiOrders || {}),
             ...(current?.modulePrefs?.iaiOrders || {}),
@@ -2805,6 +2832,15 @@ function sanitizeSettingsPatch(patch) {
   if (isPlainObject(patch.modulePrefs)) {
     next.modulePrefs = {};
 
+    if (isPlainObject(patch.modulePrefs.visibility)) {
+      next.modulePrefs.visibility = {};
+      for (const key of ["pmReport", "iaiOrders", "invoicesDe"]) {
+        if (typeof patch.modulePrefs.visibility[key] === "boolean") {
+          next.modulePrefs.visibility[key] = patch.modulePrefs.visibility[key];
+        }
+      }
+    }
+
     if (isPlainObject(patch.modulePrefs.iaiOrders)) {
       next.modulePrefs.iaiOrders = {};
       if (isPlainObject(patch.modulePrefs.iaiOrders.documentDrafts)) {
@@ -2984,6 +3020,10 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+app.on("before-quit", () => {
+  appIsQuitting = true;
 });
 
 // ===== IPC: user settings =====
@@ -3524,6 +3564,13 @@ ipcMain.handle("window:toggleMaximize", (evt) => {
 ipcMain.handle("window:close", (evt) => {
   const w = BrowserWindow.fromWebContents(evt.sender);
   w?.close();
+});
+
+ipcMain.handle("window:confirmClose", (evt) => {
+  const w = BrowserWindow.fromWebContents(evt.sender);
+  if (!w) return;
+  windowCloseApproved = true;
+  w.close();
 });
 
 ipcMain.handle("window:isMaximized", (evt) => {

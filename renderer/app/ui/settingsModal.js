@@ -7,6 +7,7 @@ import {
 } from "../state/userSettings.js";
 import { offersService } from "../offers/offersService.js";
 import { showToast, showToastAction } from "./toast.js";
+import { resolveModuleVisibility } from "./moduleVisibility.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -138,11 +139,15 @@ async function fillForm() {
   const initialsEl = el("settingsProfileInitials");
   const idosell = settings?.integrations?.idosell || {};
   const idosellEnabled = idosell?.enabled !== false;
+  const moduleVisibility = resolveModuleVisibility(settings);
   el("settingsProfileFullName").value = profile?.fullName || "";
   el("settingsProfileEmail").value = profile?.email || "";
   el("settingsProfilePhone").value = profile?.phone || "";
   el("settingsIdoSellEnabled").checked = idosellEnabled;
   el("settingsIdoSellBaseUrl").value = idosell?.baseUrl || "";
+  el("settingsModulePmReport").checked = moduleVisibility.pmReport;
+  el("settingsModuleIaiOrders").checked = moduleVisibility.iaiOrders;
+  el("settingsModuleInvoicesDe").checked = moduleVisibility.invoicesDe;
   configureIdoSellApiKeyField(el("settingsIdoSellApiKey"), !!idosell?.hasApiKey);
   setIdoSellSectionEnabled(idosellEnabled);
   if (initialsEl) {
@@ -203,6 +208,11 @@ export function initSettingsModal({
   const idosellEnabledEl = el("settingsIdoSellEnabled");
   const idosellBaseUrlEl = el("settingsIdoSellBaseUrl");
   const idosellApiKeyEl = el("settingsIdoSellApiKey");
+  const moduleVisibilityInputs = [
+    el("settingsModulePmReport"),
+    el("settingsModuleIaiOrders"),
+    el("settingsModuleInvoicesDe"),
+  ].filter(Boolean);
   if (fullNameEl && initialsEl) {
     fullNameEl.addEventListener("input", () => {
       if (String(initialsEl.dataset.touched || "0") === "1") return;
@@ -240,6 +250,21 @@ export function initSettingsModal({
       enabled ? "Włączono integrację IdoSell." : "Wyłączono integrację IdoSell.",
       { type: "info", ms: 2200 }
     );
+  });
+
+  moduleVisibilityInputs.forEach((input) => {
+    input.addEventListener("change", async () => {
+      await setUserSettings({
+        modulePrefs: {
+          visibility: {
+            pmReport: !!el("settingsModulePmReport")?.checked,
+            iaiOrders: !!el("settingsModuleIaiOrders")?.checked,
+            invoicesDe: !!el("settingsModuleInvoicesDe")?.checked,
+          },
+        },
+      });
+      showToast("Zapisano widoczność modułów.", { type: "info", ms: 1800 });
+    });
   });
 
   el("btnSettingsSaveProfile")?.addEventListener("click", async () => {

@@ -10,7 +10,22 @@ $vendorTarget = Join-Path $projectRoot 'invoice/vendor'
 $toolsTarget = Join-Path $projectRoot 'invoice/tools'
 $stamp = Join-Path $projectRoot 'runtime/invoice-ready.sha256'
 $requirements = Join-Path $projectRoot 'invoice/requirements.txt'
-$fingerprint = (Get-FileHash $PSCommandPath).Hash + (Get-FileHash $requirements).Hash
+
+function Get-Sha256([string]$path) {
+    $stream = [IO.File]::OpenRead($path)
+    try {
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try {
+            return ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
+        } finally {
+            $sha.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
+}
+
+$fingerprint = (Get-Sha256 $PSCommandPath) + (Get-Sha256 $requirements)
 
 function Remove-ManagedDirectory([string]$directory) {
     $absolute = [IO.Path]::GetFullPath($directory)
@@ -21,11 +36,11 @@ function Remove-ManagedDirectory([string]$directory) {
 }
 function Download-Verified([string]$name, [string]$url, [string]$sha256) {
     $destination = Join-Path $downloads $name
-    if (-not (Test-Path -LiteralPath $destination) -or (Get-FileHash $destination).Hash -ne $sha256) {
+    if (-not (Test-Path -LiteralPath $destination) -or (Get-Sha256 $destination) -ne $sha256.ToLowerInvariant()) {
         Write-Host "Downloading $name"
         Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $destination
     }
-    if ((Get-FileHash $destination).Hash -ne $sha256) { throw "SHA256 mismatch: $name" }
+    if ((Get-Sha256 $destination) -ne $sha256.ToLowerInvariant()) { throw "SHA256 mismatch: $name" }
     return $destination
 }
 function Run-Checked([string]$executable, [string[]]$arguments) {

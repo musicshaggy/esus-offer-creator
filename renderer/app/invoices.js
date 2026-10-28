@@ -6,6 +6,8 @@ import {
   errorText,
   validationMessage,
 } from "./invoice-ui-pl.js";
+import { getUserSettings } from "./state/userSettings.js";
+import { resolveModuleVisibility } from "./ui/moduleVisibility.js";
 const partyFields = [
   ["name", "Nazwa"],
   ["street", "Ulica / skrytka pocztowa"],
@@ -70,7 +72,7 @@ root.hidden = true;
 root.lang = "pl";
 root.innerHTML = `
 <div class="invoice-heading">
-  <div><h1>E-faktury</h1><p>Zaimportuj PDF lub zamówienie IdoSell, sprawdź dane i wyeksportuj zweryfikowaną e-fakturę.</p></div>
+  <div><h1>E-faktury (DE)</h1><p>Zaimportuj PDF lub zamówienie IdoSell, sprawdź dane i wyeksportuj zweryfikowaną niemiecką e-fakturę.</p></div>
   <div class="invoice-output">
     <label>Format eksportu<select data-invoice-control="invoiceTarget"><option>XRechnung</option><option>ZUGFeRD EN16931</option></select></label>
     <label>Język dokumentu PDF<select data-invoice-control="invoiceLanguage"><option value="de">Niemiecki</option><option value="en">Angielski</option><option value="pl">Polski</option><option value="hu">Węgierski</option></select></label>
@@ -103,6 +105,79 @@ document.body.append(root);
 const $ = (id) =>
   root.querySelector(`[data-invoice-control="${id}"]`) ||
   document.getElementById(id);
+
+const invoiceDialog = document.createElement("div");
+invoiceDialog.className = "invoiceAppDialog";
+invoiceDialog.hidden = true;
+invoiceDialog.innerHTML = `
+  <div class="invoiceAppDialog__backdrop"></div>
+  <div class="invoiceAppDialog__panel" role="alertdialog" aria-modal="true" aria-labelledby="invoiceAppDialogTitle" aria-describedby="invoiceAppDialogMessage">
+    <div class="invoiceAppDialog__icon"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></div>
+    <div class="invoiceAppDialog__content">
+      <h2 id="invoiceAppDialogTitle"></h2>
+      <p id="invoiceAppDialogMessage"></p>
+      <div class="invoiceAppDialog__actions">
+        <button type="button" class="secondary invoiceAppDialog__cancel">Wróć</button>
+        <button type="button" class="invoiceAppDialog__confirm">Potwierdź</button>
+      </div>
+    </div>
+  </div>
+`;
+document.body.append(invoiceDialog);
+
+let invoiceDialogResolve = null;
+let invoiceDialogPreviousFocus = null;
+
+function closeInvoiceDialog(result) {
+  if (invoiceDialog.hidden) return;
+  invoiceDialog.hidden = true;
+  document.body.classList.remove("invoice-dialog-open");
+  const resolve = invoiceDialogResolve;
+  invoiceDialogResolve = null;
+  invoiceDialogPreviousFocus?.focus?.();
+  invoiceDialogPreviousFocus = null;
+  resolve?.(result);
+}
+
+function showInvoiceDialog({
+  title,
+  message,
+  confirmLabel = "Potwierdź",
+  cancelLabel = "Wróć",
+  danger = false,
+  cancelable = true,
+} = {}) {
+  if (invoiceDialogResolve) closeInvoiceDialog(false);
+
+  invoiceDialog.querySelector("#invoiceAppDialogTitle").textContent = title || "E-faktury (DE)";
+  invoiceDialog.querySelector("#invoiceAppDialogMessage").textContent = message || "";
+  const cancelButton = invoiceDialog.querySelector(".invoiceAppDialog__cancel");
+  const confirmButton = invoiceDialog.querySelector(".invoiceAppDialog__confirm");
+  cancelButton.textContent = cancelLabel;
+  cancelButton.hidden = !cancelable;
+  confirmButton.textContent = confirmLabel;
+  confirmButton.classList.toggle("danger", danger);
+  invoiceDialog.classList.toggle("is-danger", danger);
+
+  invoiceDialogPreviousFocus = document.activeElement;
+  invoiceDialog.hidden = false;
+  document.body.classList.add("invoice-dialog-open");
+  requestAnimationFrame(() => (cancelable ? cancelButton : confirmButton).focus());
+
+  return new Promise((resolve) => {
+    invoiceDialogResolve = resolve;
+  });
+}
+
+invoiceDialog.querySelector(".invoiceAppDialog__cancel").addEventListener("click", () => closeInvoiceDialog(false));
+invoiceDialog.querySelector(".invoiceAppDialog__confirm").addEventListener("click", () => closeInvoiceDialog(true));
+invoiceDialog.querySelector(".invoiceAppDialog__backdrop").addEventListener("click", () => closeInvoiceDialog(false));
+invoiceDialog.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !invoiceDialog.querySelector(".invoiceAppDialog__cancel").hidden) {
+    event.preventDefault();
+    closeInvoiceDialog(false);
+  }
+});
 function value(key) {
   return key.split(".").reduce((obj, part) => obj?.[part], invoice) ?? "";
 }
@@ -593,17 +668,27 @@ async function preview() {
   $("invoicePrev").disabled = page === 0;
   $("invoiceNext").disabled = page + 1 === result.count;
 }
-function confirmReplace() {
-  return (
-    !dirty ||
-    window.confirm(
+async function confirmReplace(message) {
+  if (!dirty) return true;
+  return await showInvoiceDialog({
+    title: "Niezapisane zmiany",
+    message:
+      message ||
       "Odrzucić niezapisane zmiany? Jeśli chcesz je zachować, najpierw zapisz wersję roboczą.",
-    )
-  );
+    confirmLabel: "Odrzuć zmiany",
+    cancelLabel: "Wróć do faktury",
+    danger: true,
+  });
+}
+
+function discardCurrentInvoice() {
+  invoice = null;
+  dirty = false;
+  revision++;
 }
 async function action(name) {
   if (busy) return;
-  if (["import", "loadDraft"].includes(name) && !confirmReplace()) return;
+  if (["import", "loadDraft"].includes(name) && !(await confirmReplace())) return;
   const submittedRevision = revision;
   const submittedTarget = target();
   busy = true;
@@ -708,16 +793,18 @@ $("invoiceLanguage").disabled = true;
 const invoiceEntry = document.createElement("button");
 invoiceEntry.id = "btnOffersInvoices";
 invoiceEntry.className = "secondary offers-header-action";
-invoiceEntry.title = "E-faktury";
-invoiceEntry.setAttribute("aria-label", "E-faktury");
+invoiceEntry.title = "E-faktury (DE)";
+invoiceEntry.setAttribute("aria-label", "E-faktury (DE)");
 invoiceEntry.innerHTML =
-  '<i class="fa-solid fa-file-invoice"></i><span class="offers-header-action-label">E-faktury</span>';
+  '<i class="fa-solid fa-file-invoice"></i><span class="offers-header-action-label">E-faktury (DE)</span>';
+let invoiceModuleVisible = false;
 function placeInvoiceEntry() {
   $("btnOffersIaiOrders").after(invoiceEntry);
   const sidebar = invoiceEntry.closest(".erp-sidebar");
   invoiceEntry.classList.toggle("erp-nav-button", !!sidebar);
   invoiceEntry.querySelector("span").classList.toggle("erp-nav-label", !!sidebar);
-  invoiceEntry.hidden = !sidebar && !$("offersListView").classList.contains("is-active");
+  invoiceEntry.dataset.optionalModule = "1";
+  invoiceEntry.hidden = !invoiceModuleVisible || (!sidebar && !$("offersListView").classList.contains("is-active"));
 }
 placeInvoiceEntry();
 window.addEventListener("DOMContentLoaded", placeInvoiceEntry, { once: true });
@@ -745,9 +832,27 @@ function setInvoiceActive(active) {
   invoiceEntry.classList.toggle("is-current",active);
   if (active) invoiceEntry.setAttribute("aria-current","page"); else invoiceEntry.removeAttribute("aria-current");
 }
-document.addEventListener("click", event => {
+let replayingInvoiceNavigation = false;
+document.addEventListener("click", async event => {
   const button=event.target.closest(".erp-nav-items > button");
-  if (!root.hidden && button && button !== invoiceEntry) setInvoiceActive(false);
+  if (replayingInvoiceNavigation || root.hidden || !button || button === invoiceEntry) return;
+  if (!dirty) {
+    setInvoiceActive(false);
+    return;
+  }
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (!(await confirmReplace())) return;
+
+  discardCurrentInvoice();
+  setInvoiceActive(false);
+  replayingInvoiceNavigation = true;
+  try {
+    button.click();
+  } finally {
+    replayingInvoiceNavigation = false;
+  }
 },true);
 invoiceEntry.addEventListener("click", () => {
   setInvoiceActive(true);
@@ -759,12 +864,25 @@ invoiceBack.id = "invoiceBack";
 invoiceBack.className = "secondary";
 invoiceBack.innerHTML =
   '<i class="fa-solid fa-arrow-left"></i> Powrót do ofert';
-root.querySelector(".invoice-heading h1").textContent = "E-faktury";
+root.querySelector(".invoice-heading h1").textContent = "E-faktury (DE)";
 root.querySelector(".invoice-heading > div").prepend(invoiceBack);
-invoiceBack.addEventListener("click", () => {
+invoiceBack.addEventListener("click", async () => {
+  if (!(await confirmReplace())) return;
+  discardCurrentInvoice();
   setInvoiceActive(false);
   invoiceEntry.focus();
 });
+window.addEventListener("esus:moduleVisibilityApplied", (event) => {
+  invoiceModuleVisible = event?.detail?.visibility?.invoicesDe === true;
+  if (!invoiceModuleVisible && !root.hidden) setInvoiceActive(false);
+  placeInvoiceEntry();
+});
+getUserSettings()
+  .then((settings) => {
+    invoiceModuleVisible = resolveModuleVisibility(settings).invoicesDe;
+    placeInvoiceEntry();
+  })
+  .catch((error) => console.warn("Invoice module visibility load failed:", error));
 async function initialize() {
   if (busy) return;
   busy = true;
@@ -780,7 +898,7 @@ async function initialize() {
 window.addEventListener("esus:invoice-from-order", async (event) => {
   const request = event.detail;
   if (!request || typeof request.resolve !== "function") return;
-  if (busy || !confirmReplace()) { request.resolve(false); return; }
+  if (busy || !(await confirmReplace())) { request.resolve(false); return; }
   busy = true;
   let accepted = false;
   try {
@@ -799,15 +917,28 @@ window.addEventListener("esus:invoice-from-order", async (event) => {
     accepted = true;
     invoiceBack.focus();
   } catch (error) {
-    window.alert(errorText(error));
+    await showInvoiceDialog({
+      title: "Nie udało się utworzyć e-faktury",
+      message: errorText(error),
+      confirmLabel: "Zamknij",
+      cancelable: false,
+    });
   } finally {
     busy = false;
     request.resolve(accepted);
   }
 });
-window.addEventListener("beforeunload", (event) => {
-  if (dirty) {
-    event.preventDefault();
-    event.returnValue = "";
+
+let closeRequestPending = false;
+window.esusAPI?.onWinCloseRequested?.(async () => {
+  if (closeRequestPending) return;
+  closeRequestPending = true;
+  try {
+    const confirmed = await confirmReplace(
+      "Zamknąć aplikację i odrzucić niezapisane zmiany w e-fakturze?",
+    );
+    if (confirmed) await window.esusAPI?.winConfirmClose?.();
+  } finally {
+    closeRequestPending = false;
   }
 });
